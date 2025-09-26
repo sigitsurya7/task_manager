@@ -45,15 +45,18 @@ function TaskCard(
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.6 : 1,
+    opacity: isDragging ? 0.25 : 1,
+    zIndex: isDragging ? 50 : "auto",
   } as CSSProperties;
 
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
       <Card
+        isPressable
         shadow="sm"
-        className="border border-default-200 cursor-pointer hover:border-primary w-full"
-        onClick={onOpen}
+        className="border border-default-200 hover:border-primary w-full cursor-grab active:cursor-grabbing touch-none select-none"
+        onPress={() => { if (!isDragging) onOpen(); }}
+        {...listeners}
       >
         <CardHeader className="justify-between">
           <Chip size="sm" variant="flat" color="secondary">
@@ -243,11 +246,15 @@ export default function AdminPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
-  const [dragging, setDragging] = useState(false);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-  const onDragStart = (_e: DragStartEvent) => setDragging(true);
+  const onDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    const task = columns.flatMap((c) => c.tasks).find((t) => t.id === id) || null;
+    setActiveTask(task);
+  };
   const onDragEnd = (e: DragEndEvent) => {
-    setDragging(false);
+    setActiveTask(null);
     console.log('drag')
     const { active, over } = e;
     if (!over) return;
@@ -318,7 +325,14 @@ export default function AdminPage() {
       </header>
 
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden no-scrollbar">
-        <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+        <DndContext
+          sensors={sensors}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onDragCancel={() => {
+            setActiveTask(null);
+          }}
+        >
           <div className="flex h-full min-w-full gap-4 pb-2 pr-2">
             {columns.map((col) => (
               <div key={col.id} className="flex h-full min-h-0 flex-col">
@@ -326,18 +340,48 @@ export default function AdminPage() {
                 <Column
                   data={col}
                   onAdd={handleAdd}
-                  onOpen={(t) => {
-                    if (!dragging) openTask(t, col.title);
-                  }}
+                  onOpen={(t) => openTask(t, col.title)}
                 />
               </div>
             ))}
           </div>
-          <DragOverlay>
-            {(() => {
-              // simple visual overlay using selected card when dragging
-              return null; // keep lightweight; DnD kit will clone via transform already
-            })()}
+          <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }}>
+            {activeTask ? (
+              <div className="pointer-events-none select-none">
+                <Card
+                  shadow="lg"
+                  className="w-72 sm:w-63 border border-default-200 bg-content1/95 shadow-2xl ring-1 ring-default-200/60 rotate-2 scale-[1.03]"
+                >
+                  <CardHeader className="justify-between">
+                    <Chip size="sm" variant="flat" color="secondary">
+                      {activeTask.tag}
+                    </Chip>
+                    <div className="text-default-400">
+                      {/* drag indicator */}
+                    </div>
+                  </CardHeader>
+                  <CardBody className="gap-3">
+                    <p className="font-medium text-default-800">{activeTask.title}</p>
+                    {typeof activeTask.progress === "number" && (
+                      <Progress
+                        aria-label="progress"
+                        value={activeTask.progress}
+                        color={activeTask.progress >= 100 ? "success" : "warning"}
+                        className="max-w-full"
+                      />
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex -space-x-2">
+                        <Avatar size="sm" name="AL" className="ring-2 ring-background" />
+                        <Avatar size="sm" name="MF" className="ring-2 ring-background" />
+                        <Avatar size="sm" name="JR" className="ring-2 ring-background" />
+                      </div>
+                      <span className="text-tiny text-default-500">2d left</span>
+                    </div>
+                  </CardBody>
+                </Card>
+              </div>
+            ) : null}
           </DragOverlay>
         </DndContext>
       </div>
