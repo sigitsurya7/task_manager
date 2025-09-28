@@ -9,6 +9,7 @@ import { Toaster } from "react-hot-toast";
 import { siteConfig } from "@/config/site";
 import { fontSans } from "@/config/fonts";
 import { Navbar } from "@/components/navbar";
+import { RegisterSW } from "@/components/pwa/register-sw";
 
 export const metadata: Metadata = {
   title: {
@@ -16,8 +17,15 @@ export const metadata: Metadata = {
     template: `%s - ${siteConfig.name}`,
   },
   description: siteConfig.description,
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/favicon.ico",
+    apple: "/favicon.ico",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: siteConfig.name,
   },
 };
 
@@ -45,6 +53,7 @@ export default function RootLayout({
         <Providers themeProps={{ attribute: "class", defaultTheme: "dark" }}>
           <div className="relative flex flex-col h-screen">
             <Toaster position="top-center" />
+            <RegisterSW />
             <main className="px-4 py-4 flex-grow">
               {children}
             </main>

@@ -1,0 +1,19 @@
+{
+  "name": "Task Manager",
+  "short_name": "Tasks",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0ea5e9",
+  "scope": "/",
+  "description": "Kelola tugas dan workspace Anda secara efisien.",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "16x16 24x24 32x32 48x48 64x64",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["productivity", "utilities"]
+}
+
