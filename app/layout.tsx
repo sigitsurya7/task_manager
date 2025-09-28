@@ -50,7 +50,7 @@ export default function RootLayout({
             </main>
             <footer className="w-full flex gap-2 items-center justify-center py-3">
               
-                <span className="text-default-600">Powered by</span>
+                <span className="text-default-600">Didukung oleh</span>
                 <p className="text-primary cursor-pointer">IT RS Ananda Corporate (ITAC)</p>
             </footer>
           </div>

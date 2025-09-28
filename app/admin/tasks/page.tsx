@@ -47,9 +47,9 @@ export default function MyTasksPage() {
   return (
     <div className="max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-4 gap-3">
-        <h1 className="text-2xl font-semibold">My Tasks</h1>
+        <h1 className="text-2xl font-semibold">Tugas Saya</h1>
         <div className="flex items-center gap-2">
-          <Input placeholder="Search tasks..." size="sm" value={q} onValueChange={setQ} className="w-64" />
+          <Input placeholder="Cari tugas..." size="sm" value={q} onValueChange={setQ} className="w-64" />
           <select className="border rounded-md px-2 py-1 text-sm" value={pageSize} onChange={(e)=>{ setPageSize(parseInt(e.target.value,10)); setPage(1); }}>
             <option value={10}>10</option>
             <option value={20}>20</option>
@@ -57,15 +57,15 @@ export default function MyTasksPage() {
           </select>
         </div>
       </div>
-      <Table aria-label="My tasks" removeWrapper>
+      <Table aria-label="Tugas saya" removeWrapper>
         <TableHeader>
-          <TableColumn>Task</TableColumn>
+          <TableColumn>Tugas</TableColumn>
           <TableColumn>Workspace</TableColumn>
           <TableColumn>Status</TableColumn>
-          <TableColumn>Due</TableColumn>
-          <TableColumn>Action</TableColumn>
+          <TableColumn>Jatuh Tempo</TableColumn>
+          <TableColumn>Aksi</TableColumn>
         </TableHeader>
-        <TableBody isLoading={loading} emptyContent={loading ? "Loading..." : "No tasks"}>
+        <TableBody isLoading={loading} emptyContent={loading ? "Memuat..." : "Tidak ada tugas"}>
           {rows.map((r) => (
             <TableRow key={r.id}>
               <TableCell>{r.title}</TableCell>
@@ -73,7 +73,7 @@ export default function MyTasksPage() {
               <TableCell>{r.column}</TableCell>
               <TableCell>{fmt(r.dueDate)}</TableCell>
               <TableCell>
-                <Button isIconOnly size="sm" variant="flat" aria-label="Open workspace" onPress={() => router.push(`/admin/workspace/${r.workspace.slug}`)}>
+                <Button isIconOnly size="sm" variant="flat" aria-label="Buka workspace" onPress={() => router.push(`/admin/workspace/${r.workspace.slug}`)}>
                   <FiFolder />
                 </Button>
               </TableCell>

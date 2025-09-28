@@ -130,6 +130,11 @@ export const useBoard = create<State>((set, get) => ({
             return { columns: cols } as any;
           });
         }
+        if (evt.type === "task.deleted" && evt.taskId) {
+          set((s) => ({
+            columns: s.columns.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== evt.taskId) })),
+          }));
+        }
       } catch {}
     };
     es.onerror = () => {

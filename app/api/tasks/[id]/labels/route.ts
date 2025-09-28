@@ -40,3 +40,17 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const labels = projectLabels.map((l) => ({ id: l.id, name: l.name, color: l.color, selected: attachedIds.has(l.id) }));
   return NextResponse.json({ labels });
 }
+
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
+  const { labelId } = await req.json().catch(() => ({}));
+  if (!labelId) return NextResponse.json({ message: "labelId required" }, { status: 400 });
+  const task = await prisma.task.findUnique({ where: { id: params.id }, include: { project: { include: { workspace: true } } } });
+  if (!task) return NextResponse.json({ message: "task not found" }, { status: 404 });
+  const wsId = task.project.workspace.id;
+  const membership = await prisma.workspaceMember.findFirst({ where: { workspaceId: wsId, userId: String(auth.sub) } });
+  if (!membership || membership.role === "VIEWER") return NextResponse.json({ message: "forbidden" }, { status: 403 });
+  await prisma.taskLabel.deleteMany({ where: { taskId: task.id, labelId } });
+  return NextResponse.json({ ok: true });
+}

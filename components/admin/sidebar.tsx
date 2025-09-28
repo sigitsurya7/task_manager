@@ -22,7 +22,7 @@ import { useWorkspaces } from "@/stores/workspaces";
 
 const baseMenu: Item[] = [
   { label: "Dashboard", href: "/admin/dashboard", icon: <FiLayout /> },
-  { label: "My Tasks", href: "/admin/tasks", icon: <FiCheckSquare /> },
+  { label: "Tugas Saya", href: "/admin/tasks", icon: <FiCheckSquare /> },
 ];
 
 // icons map by key coming from server
@@ -73,7 +73,7 @@ export default function AdminSidebar() {
   const { items, fetch } = useWorkspaces();
   useEffect(() => { fetch(); }, [fetch]);
   const viewerOnly = useMemo(() => items.length > 0 && items.every((w) => w.role === "VIEWER"), [items]);
-  const menuItems = useMemo(() => (viewerOnly ? baseMenu.filter((m) => m.label !== "My Tasks") : baseMenu), [viewerOnly]);
+  const menuItems = baseMenu;
   const workspaces = useMemo<Item[]>(() =>
     items.map((w) => ({ label: w.name, href: `/admin/workspace/${w.slug}`, icon: iconMap[w.iconKey || "FiZap"] })),
   [items]);
@@ -202,7 +202,7 @@ export default function AdminSidebar() {
               size="sm"
             />
             <div className="leading-tight">
-              <p className="text-small font-semibold">{me?.username || "User"}</p>
+              <p className="text-small font-semibold">{me?.username || "Pengguna"}</p>
               <p className="text-tiny text-default-500">{roleBadge}</p>
             </div>
           </>
@@ -248,10 +248,10 @@ export default function AdminSidebar() {
                 "w-full flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer text-sm transition-colors",
                 "text-default-600 hover:bg-default-100",
               )}
-              aria-label="Settings"
+              aria-label="Pengaturan"
             >
               <span className="text-lg shrink-0"><FiSettings /></span>
-              {!collapsed && <span className="truncate">Settings</span>}
+              {!collapsed && <span className="truncate">Pengaturan</span>}
             </button>
           </PopoverTrigger>
           <PopoverContent className="">
@@ -260,7 +260,7 @@ export default function AdminSidebar() {
                 className="text-left rounded-md px-2 py-1 hover:bg-default-100"
                 onClick={() => (window.location.href = "/admin/settings/account")}
               >
-                Account Settings
+                Pengaturan Akun
               </button>
               <Divider />
               <button
@@ -269,12 +269,12 @@ export default function AdminSidebar() {
                   await toast.promise(api.post('/api/auth/logout'), {
                     loading: 'Logging out...',
                     success: 'Logged out',
-                    error: 'Logout failed',
+                    error: 'Gagal keluar',
                   });
                   window.location.href = "/login";
                 }}
               >
-                Logout
+                Keluar
               </button>
             </div>
           </PopoverContent>
@@ -286,7 +286,7 @@ export default function AdminSidebar() {
         <ModalContent>
           {() => (
             <div className="p-5">
-              <ModalHeader className="p-0 mb-4">Add Workspace</ModalHeader>
+              <ModalHeader className="p-0 mb-4">Tambah Workspace</ModalHeader>
               <div className="grid gap-3">
                 <Input
                   label="Nama Workspace"
