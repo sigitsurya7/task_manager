@@ -1,0 +1,1064 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { toast } from "react-hot-toast";
+import { useBoard } from "@/stores/board";
+import { useWorkspaces } from "@/stores/workspaces";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@heroui/button";
+import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Avatar } from "@heroui/avatar";
+import { Chip } from "@heroui/chip";
+import { Progress } from "@heroui/progress";
+import { Input, Textarea } from "@heroui/input";
+import { Checkbox } from "@heroui/checkbox";
+import { Modal, ModalContent, ModalHeader } from "@heroui/modal";
+import { FiMenu, FiPlus, FiTrash2 } from "react-icons/fi";
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+} from "@dnd-kit/core";
+import { useDroppable } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Skeleton } from "@heroui/skeleton";
+
+type Task = {
+  id: string;
+  title: string;
+  progress?: number;
+  dueDate?: string | null;
+  startDate?: string | null;
+  tags?: { id: string; name: string; color: string }[];
+  assignees?: { id: string; name: string | null; username: string }[];
+};
+type ColumnData = { id: string; title: string; accent?: string | null; tasks: Task[] };
+
+function formatDaysLeft(dueDate?: string | null) {
+  if (!dueDate) return "";
+  const now = new Date();
+  const due = new Date(dueDate);
+  const ms = due.getTime() - now.getTime();
+  const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
+  if (Number.isNaN(days) || days < 0) return "";
+  return `${days}d left`;
+}
+
+function TaskCard({ id, title, progress, tags, assignees, dueDate, onOpen }: Task & { onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.25 : 1,
+    zIndex: isDragging ? 50 : "auto",
+  } as CSSProperties;
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <Card
+        isPressable
+        shadow="sm"
+        className="border border-default-200 hover:border-primary w-full cursor-grab active:cursor-grabbing touch-none select-none"
+        onPress={() => { if (!isDragging) onOpen(); }}
+        {...listeners}
+      >
+        {/* Stacked labels (max 3) */}
+        {tags && tags.length > 0 ? (
+          <div className="px-4 pt-3">
+            <div className="flex -space-x-2">
+              {tags.slice(0, 3).map((tg) => (
+                <span key={tg.id} className="inline-flex items-center rounded-full bg-primary text-white dark:text-default-700 px-2 py-0.5 text-tiny ring-2 ring-background">
+                  {tg.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <CardBody className="gap-3">
+          <p className="font-medium text-default-800">{title}</p>
+          {(assignees && assignees.length > 0) || formatDaysLeft(dueDate) ? (
+            <div className="flex items-center justify-between">
+              <div className="flex -space-x-2">
+                {(assignees ?? []).slice(0, 3).map((a) => (
+                  <Avatar key={a.id} size="sm" name={a.name ?? a.username} className="ring-2 ring-background" />
+                ))}
+              </div>
+              {formatDaysLeft(dueDate) ? (
+                <span className="text-tiny text-default-500">{formatDaysLeft(dueDate)}</span>
+              ) : <span />}
+          </div>
+          ) : null}
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onChanged }: { task: Task | null; columnTitle: string; columnAccent?: string | null; slug: string; role: "ADMIN" | "MEMBER" | "VIEWER" | null; onClose: () => void; onChanged: () => void }) {
+  const isViewer = role === "VIEWER";
+  const [desc, setDesc] = useState("");
+  const [titleEdit, setTitleEdit] = useState("");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [due, setDue] = useState<string>("");
+  const [members, setMembers] = useState<{ id: string; email: string; username: string; name: string | null; role: string }[]>([]);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<string | null>(null);
+  const [labelName, setLabelName] = useState("");
+  const [labelColor, setLabelColor] = useState("#16a34a");
+  const [checklists, setChecklists] = useState<{ id: string; title: string; items: { id: string; title: string; done: boolean }[] }[]>([]);
+  const [newItem, setNewItem] = useState<Record<string, string>>({});
+  const [attachments, setAttachments] = useState<{ id: string; name: string; url: string; type: string }[]>([]);
+  const [comment, setComment] = useState("");
+  const [comments, setComments] = useState<any[]>([]);
+  const [me, setMe] = useState<{ id: string; username?: string; name?: string } | null>(null);
+  const [checklistModal, setChecklistModal] = useState(false);
+  const [checklistTitle, setChecklistTitle] = useState("Checklist");
+  const [attachModal, setAttachModal] = useState(false);
+  const [preview, setPreview] = useState<{ open: boolean; att: { id: string; name: string; url: string; type: string } | null }>({ open: false, att: null });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingLink, setPendingLink] = useState("");
+  const [pendingDisplay, setPendingDisplay] = useState("");
+  const [memberModal, setMemberModal] = useState(false);
+  const [labelModal, setLabelModal] = useState(false);
+  const [dateModal, setDateModal] = useState(false);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
+  const [labelQuery, setLabelQuery] = useState("");
+  const [newLabelName, setNewLabelName] = useState("");
+  const [allLabels, setAllLabels] = useState<{ id: string; name: string; color: string; selected?: boolean }[]>([]);
+  const [confirm, setConfirm] = useState<{ open: boolean; title: string; message?: string; onConfirm: null | (() => void | Promise<void>) }>({ open: false, title: "", message: "", onConfirm: null });
+  const [startEnabled, setStartEnabled] = useState(false);
+  const [startDate, setStartDate] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!task) return;
+    setLoading(true);
+    setDue(task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 16) : "");
+    setStartEnabled(Boolean(task.startDate));
+    setStartDate(task.startDate ? new Date(task.startDate).toISOString().slice(0, 16) : "");
+    setTitleEdit(task.title || "");
+    setSelectedMemberIds(new Set((task.assignees ?? []).map((a)=>a.id)));
+    (async () => {
+      try {
+        const [meRes, membersRes, taskRes, checkRes, labelsRes, attRes, commentsRes] = await Promise.all([
+          fetch(`/api/auth/me`, { credentials: 'include' }).catch(()=>null),
+          fetch(`/api/workspaces/${slug}/members`, { credentials: "include" }).catch(()=>null),
+          fetch(`/api/tasks/${task.id}`, { credentials: 'include' }).catch(()=>null),
+          fetch(`/api/tasks/${task.id}/checklists`, { credentials: 'include' }).catch(()=>null),
+          fetch(`/api/tasks/${task.id}/labels`, { credentials: 'include' }).catch(()=>null),
+          fetch(`/api/tasks/${task.id}/attachments`, { credentials: 'include' }).catch(()=>null),
+          fetch(`/api/comments?taskId=${task.id}`, { credentials:'include' }).catch(()=>null),
+        ]);
+        try { const d = await meRes?.json(); setMe(d?.user ?? null); } catch {}
+        try { if (membersRes?.ok){ const d=await membersRes.json(); setMembers(d.members.map((m:any)=>({...m.user, role:m.role}))); } } catch {}
+        try { if (taskRes?.ok){ const d=await taskRes.json(); setDesc(d.description||""); } } catch {}
+        try { if (checkRes?.ok){ const d=await checkRes.json(); setChecklists((d.checklists||[]).map((cl:any)=>({id:cl.id,title:cl.title,items:(cl.items||[]).map((it:any)=>({id:it.id,title:it.title,done:!!it.done}))}))); } } catch {}
+        try { if (labelsRes?.ok){ const d=await labelsRes.json(); setAllLabels(d.labels||[]); } } catch {}
+        try { if (attRes?.ok){ const d=await attRes.json(); setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'}))); } } catch {}
+        try { const d = await commentsRes?.json(); setComments(d?.comments||[]);} catch {}
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [task, slug]);
+
+  useEffect(() => {
+    if (!task) return;
+    (async () => {
+      try {
+        const r = await fetch(`/api/comments?taskId=${task.id}`, { credentials: 'include' });
+        const d = await r.json();
+        setComments(d.comments || []);
+      } catch {
+        setComments([]);
+      }
+    })();
+  }, [task]);
+
+  if (!task) return null;
+
+  const saveDesc = async () => {
+    if (isViewer) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: desc }) });
+      if (!res.ok) throw new Error('Failed');
+      onChanged();
+      toast.success('Berhasil menyimpan deskripsi');
+    } catch {}
+  };
+  const saveTitle = async () => {
+    if (isViewer || !titleEdit.trim()) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: titleEdit.trim() }) });
+      if (!res.ok) throw new Error('Failed');
+      setIsEditingTitle(false);
+      onChanged();
+      toast.success('Judul berhasil disimpan');
+    } catch {}
+  };
+  const requestDeleteTask = () => {
+    setConfirm({
+      open: true,
+      title: 'Hapus task?',
+      message: 'Semua data terkait (komentar, checklist, lampiran) akan dihapus.',
+      onConfirm: async () => {
+        try { await fetch(`/api/tasks/${task.id}`, { method: 'DELETE', credentials: 'include' }); } catch {}
+        onClose();
+        onChanged();
+      },
+    });
+  };
+  const saveDue = async (val: string) => {
+    if (isViewer) return;
+    try {
+      setDue(val);
+      await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dueDate: val ? new Date(val).toISOString() : null }) });
+      onChanged();
+    } catch {}
+  };
+  const addAssignee = async () => {
+    if (isViewer || !selectedMember) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/assignees`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: selectedMember }) });
+      setSelectedMember(null);
+      setAddMemberOpen(false);
+      onChanged();
+    } catch {}
+  };
+  const addLabel = async () => {
+    if (isViewer || !labelName.trim()) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/labels`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: labelName.trim(), color: labelColor }) });
+      setLabelName("");
+      onChanged();
+    } catch {}
+  };
+
+  const addChecklistGroup = async () => {
+    if (!checklistTitle.trim() || !task) return;
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/checklists`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: checklistTitle.trim() })
+      });
+      if (!res.ok) throw new Error('Failed');
+      const d = await res.json();
+      setChecklists((arr) => [{ id: d.checklist.id, title: d.checklist.title, items: [] }, ...arr]);
+      setChecklistTitle("Checklist");
+      setChecklistModal(false);
+      toast.success('Checklist ditambahkan');
+    } catch {
+      toast.error('Gagal menambah checklist');
+    }
+  };
+  const addChecklistItem = async (groupId: string) => {
+    const title = (newItem[groupId] || "").trim();
+    if (!title) return;
+    try {
+      const res = await fetch(`/api/checklists/${groupId}/items`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title })
+      });
+      if (!res.ok) throw new Error('Failed');
+      const d = await res.json();
+      setChecklists((arr) => arr.map((g) => g.id === groupId ? { ...g, items: [{ id: d.item.id, title: d.item.title, done: !!d.item.done }, ...g.items] } : g));
+      setNewItem((m) => ({ ...m, [groupId]: "" }));
+    } catch {
+      toast.error('Gagal menambah item');
+    }
+  };
+  const addAttachmentFile = async (file: File) => {
+    if (!task) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await fetch(`/api/tasks/${task.id}/attachments`, { method:'POST', credentials:'include', body: fd });
+      if (!r.ok) throw new Error('upload failed');
+      const d = await r.json();
+      setAttachments((arr)=>[{ id: d.attachment.id, name: d.attachment.name, url: d.attachment.url, type: d.attachment.type || 'file' }, ...arr]);
+    } catch {}
+  };
+  const addAttachmentLink = async (link: string, display?: string) => {
+    if (!task) return;
+    try {
+      const r = await fetch(`/api/tasks/${task.id}/attachments`, { method:'POST', credentials:'include', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ link, display }) });
+      if (!r.ok) throw new Error('link failed');
+      const d = await r.json();
+      setAttachments((arr)=>[{ id: d.attachment.id, name: d.attachment.name, url: d.attachment.url, type: d.attachment.type || 'link' }, ...arr]);
+    } catch {}
+  };
+  const deleteAttachment = async (id: string) => {
+    try {
+      await fetch(`/api/attachments/${id}`, { method:'DELETE', credentials:'include' });
+      setAttachments((arr)=>arr.filter((x)=>x.id!==id));
+    } catch {}
+  };
+  const submitComment = async () => {
+    if (!comment.trim()) return;
+    try {
+      await fetch(`/api/comments`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId: task.id, body: comment }) });
+      setComment("");
+    } catch {}
+  };
+  const deleteComment = async (id: string) => {
+    try { await fetch(`/api/comments/${id}`, { method:'DELETE', credentials:'include' }); setComments((arr)=>arr.filter((c)=>c.id!==id)); } catch {}
+  };
+
+  if (loading) {
+    return (
+      <>
+        <div className="grid w-full grid-cols-1 gap-6 p-8 md:grid-cols-[1fr_360px]">
+          <div>
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-6 w-24 rounded-full" />
+              <Skeleton className="h-8 w-8 rounded-lg" />
+            </div>
+            <div className="mt-6 grid grid-cols-3 gap-4">
+              <Skeleton className="h-16 rounded-xl col-span-1" />
+              <Skeleton className="h-16 rounded-xl col-span-1" />
+              <Skeleton className="h-16 rounded-xl col-span-1" />
+            </div>
+            <div className="mt-6 space-y-3">
+              <Skeleton className="h-4 w-24 rounded" />
+              <Skeleton className="h-24 rounded-xl" />
+            </div>
+          </div>
+          <div>
+            <Skeleton className="h-5 w-40 rounded mb-3" />
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_,i)=>(<Skeleton key={i} className="h-16 rounded-xl" />))}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+    <div className="grid w-full grid-cols-1 gap-6 p-8 md:grid-cols-[1fr_360px]">
+      <div>
+        <ModalHeader className="flex items-center justify-between gap-3 p-0">
+          <Chip variant="flat" className={`${columnAccent ?? ''} ${columnAccent ? 'text-white' : ''}`}>{columnTitle}</Chip>
+          {isEditingTitle ? (
+            <div className="flex items-center gap-2">
+              <Input size="sm" variant="bordered" value={titleEdit} onValueChange={setTitleEdit} />
+              <Button size="sm" color="primary" onPress={saveTitle} isDisabled={!titleEdit.trim()}>Save</Button>
+              <Button size="sm" variant="light" onPress={()=>{ setIsEditingTitle(false); setTitleEdit(task.title); }}>Cancel</Button>
+            </div>
+          ) : (
+            <h2 className={`text-2xl font-semibold ${!isViewer ? 'cursor-text' : ''}`} onClick={()=>{ if (!isViewer) setIsEditingTitle(true); }}>{task.title}</h2>
+          )}
+
+          {!isViewer && (
+            <Dropdown>
+              <DropdownTrigger>
+                <Button size="sm" isIconOnly variant="light"><FiMenu /></Button>
+              </DropdownTrigger>
+              <DropdownMenu aria-label="task menu" onAction={(key)=>{ if (key === 'delete') requestDeleteTask(); }}>
+                <DropdownItem key="delete" className="text-danger" color="danger">Delete task</DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
+          )}
+        </ModalHeader>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {!isViewer && <Button size="sm" variant="flat" color="secondary" onPress={() => setChecklistModal(true)}>Checklist</Button>}
+          {!isViewer && <Button size="sm" variant="flat" color="success" onPress={() => setAttachModal(true)}>Attachment</Button>}
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-tiny text-default-500">Members</p>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              {(task.assignees ?? []).map((m) => (
+                <Avatar key={m.id} name={m.name ?? m.username} size="sm" className="ring-2 ring-background" />
+              ))}
+              {!isViewer && (
+                <Button isIconOnly size="sm" variant="light" onPress={() => setMemberModal(true)}>+</Button>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-tiny text-default-500">Labels</p>
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex -space-x-2">
+                {(task.tags ?? []).slice(0,3).map((l) => (
+                  <span key={l.id} className="inline-flex items-center rounded-full bg-primary text-white dark:text-default-700 px-2 py-0.5 text-tiny">
+                    {l.name}
+                  </span>
+                ))}
+              </div>
+              {!isViewer && <Button isIconOnly size="sm" variant="light" onPress={()=>setLabelModal(true)}>+</Button>}
+            </div>
+          </div>
+          <div>
+            <p className="text-tiny text-default-500">Due date</p>
+            <div className="mt-2">
+              <Button variant="bordered" size="sm" onPress={()=>setDateModal(true)} disabled={isViewer}>{task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Set dates'}</Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <p className="text-small text-default-500">Description</p>
+          <Textarea
+            className="mt-2"
+            minRows={4}
+            variant="bordered"
+            placeholder="Add a more detailed description..."
+            value={desc}
+            onValueChange={setDesc}
+            isReadOnly={isViewer}
+          />
+          {!isViewer && (
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" color="primary" onPress={saveDesc}>Save</Button>
+            </div>
+          )}
+        </div>
+
+        {/* Checklist groups */}
+        {checklists.map((g) => {
+          const total = g.items.length || 1;
+          const done = g.items.filter((i) => i.done).length;
+          const percent = Math.round((done / total) * 100);
+          return (
+            <div key={g.id} className="mt-6 border border-default-200 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <p className="font-medium">{g.title}</p>
+                {!isViewer && <Button size="sm" variant="light" color="danger" onPress={() => {
+                  setConfirm({
+                    open: true,
+                    title: 'Hapus checklist?',
+                    message: 'Tindakan ini tidak dapat dibatalkan.',
+                    onConfirm: async () => {
+                      try { await fetch(`/api/checklists/${g.id}`, { method: 'DELETE', credentials: 'include' }); } catch {}
+                      setChecklists((arr)=>arr.filter((x)=>x.id!==g.id));
+                    }
+                  });
+                }}>Delete</Button>}
+              </div>
+              <div className="mt-2">
+                <Progress aria-label="progress" value={percent} className="max-w-full" />
+              </div>
+              {!isViewer && (
+                <div className="mt-2">
+                  <Input
+                    variant="bordered"
+                    placeholder="Add an item"
+                    value={newItem[g.id] || ""}
+                    onValueChange={(val)=>setNewItem((m)=>({ ...m, [g.id]: val }))}
+                  />
+                  <div className="flex items-center gap-3 mt-2">
+                    <Button size="sm" color="primary" onPress={()=>addChecklistItem(g.id)} startContent={<FiPlus />}>Add</Button>
+                    <Button size="sm" variant="light" onPress={()=>setNewItem((m)=>({ ...m, [g.id]: "" }))}>Cancel</Button>
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 space-y-2">
+                {g.items.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox size="sm" isSelected={c.done} onValueChange={async (checked)=>{
+                      setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, done:checked}:it)}:gr));
+                      try { await fetch(`/api/checklist-items/${c.id}`, { method:'PATCH', credentials:'include', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ done: checked }) }); } catch {}
+                    }} isDisabled={isViewer} />
+                    <div className="flex-1">
+                      <Input
+                        variant="bordered"
+                        size="sm"
+                        value={c.title}
+                        isReadOnly={isViewer}
+                        onValueChange={(val)=>setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, title:val}:it)}:gr))}
+                        onBlur={async ()=>{ try { await fetch(`/api/checklist-items/${c.id}`, { method:'PATCH', credentials:'include', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: c.title }) }); } catch {} }}
+                      />
+                    </div>
+                    {!isViewer && (
+                      <Button size="sm" variant="light" color="danger" onPress={() => {
+                        setConfirm({
+                          open: true,
+                          title: 'Hapus item checklist?',
+                          message: 'Item akan dihapus permanen.',
+                          onConfirm: async () => {
+                            try { await fetch(`/api/checklist-items/${c.id}`, { method:'DELETE', credentials:'include' }); } catch {}
+                            setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.filter(it=>it.id!==c.id)}:gr));
+                          }
+                        });
+                      }}>Delete</Button>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Attachments */}
+        <div className="mt-6">
+          {attachments.length > 0 && <p className="text-small text-default-500 mb-2">Attachments</p>}
+          {attachments.length > 0 && (
+            <div className="overflow-x-auto rounded-lg border border-default-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-content2 text-default-500">
+                    <th className="text-left px-3 py-2">Name</th>
+                    <th className="text-left px-3 py-2">Type</th>
+                    <th className="text-right px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attachments.map((a) => {
+                    const isImage = a.type?.startsWith('image/');
+                    const isPdf = a.type === 'application/pdf' || a.url.toLowerCase().endsWith('.pdf');
+                    const isLink = a.type === 'link' || /^https?:\/\//i.test(a.url);
+                    const handleOpen = () => {
+                      if (isLink && !isImage && !isPdf) { window.open(a.url, '_blank', 'noopener,noreferrer'); return; }
+                      if (isImage || isPdf) { setPreview({ open: true, att: a }); return; }
+                      window.open(a.url, '_blank', 'noopener,noreferrer');
+                    };
+                    return (
+                      <tr key={a.id} className="border-t border-default-200">
+                        <td className="px-3 py-2">
+                          <button className="text-primary hover:underline" onClick={handleOpen}>{a.name}</button>
+                        </td>
+                        <td className="px-3 py-2">{a.type || 'file'}</td>
+                        <td className="px-3 py-2 text-right">
+                          {!isViewer && (
+                            <Button size="sm" variant="light" color="danger" onPress={()=>{
+                              setConfirm({
+                                open: true,
+                                title: 'Hapus lampiran?',
+                                message: 'File/link akan dihapus dari task ini.',
+                                onConfirm: async () => { await deleteAttachment(a.id); }
+                              });
+                            }}>Delete</Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <ModalHeader className="p-0">Comments and activity</ModalHeader>
+        <div className="mt-3 space-y-3">
+          <div className="flex gap-2 items-center">
+            <Input
+              placeholder="Write a comment..."
+              value={comment}
+              onChange={(e)=>setComment(e.target.value)}
+              onPaste={(e)=>{
+                const items = e.clipboardData?.files;
+                if (items && items.length) {
+                  addAttachmentFile(items[0]);
+                }
+              }}
+            />
+            {!isViewer && (
+              <Button size="sm" color="primary" onPress={async ()=>{ await submitComment(); try{ const r=await fetch(`/api/comments?taskId=${task.id}`, { credentials:'include' }); const d=await r.json(); setComments(d.comments||[]);}catch{} }}>Save</Button>
+            )}
+          </div>
+          <div className="overflow-y-auto max-h-96 no-scrollbar flex flex-col gap-2">
+            {comments?.length ? comments.map((c)=> (
+              <div key={c.id} className="flex gap-3 items-start rounded-xl border border-default-200 p-3">
+                <div className="col-span-1">
+                  <Avatar name={c.author?.name ?? c.author?.username ?? 'U'} size="sm" />
+                </div>
+                <div className="flex-1 col-span-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-small"><span className="font-medium">{c.author?.name ?? c.author?.username ?? 'User'}</span></p>
+                      <p className="text-tiny text-default-500">{new Date(c.createdAt).toLocaleString()}</p>
+                    </div>
+                    {me && c.author?.id === me.id && (
+                      <Button isIconOnly size="sm" variant="light" color="danger" onPress={()=>deleteComment(c.id)}>
+                        <FiTrash2 />
+                      </Button>
+                    )}
+                  </div>
+                  <p className="mt-1 text-sm whitespace-pre-wrap">{c.body}</p>
+                </div>
+              </div>
+            )) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <Modal isOpen={checklistModal} onOpenChange={setChecklistModal}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">Add checklist</ModalHeader>
+            <div className="grid gap-3">
+              <Input autoFocus label="Title" variant="bordered" value={checklistTitle} onValueChange={setChecklistTitle} />
+              <div className="flex justify-end gap-2">
+                <Button variant="light" onPress={() => setChecklistModal(false)}>Cancel</Button>
+                <Button color="primary" onPress={addChecklistGroup}>Add</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+
+    {/* Members Modal */}
+    <Modal isOpen={memberModal} onOpenChange={setMemberModal}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">Members</ModalHeader>
+            <Input placeholder="Search members" value={memberQuery} onValueChange={setMemberQuery} className="mb-3" />
+            <div className="overflow-y-auto overflow-x-hidden pb-20 max-h-80 no-scrollbar space-y-2">
+              {members
+                .filter((u)=> u.username.toLowerCase().includes(memberQuery.toLowerCase()) || (u.name??'').toLowerCase().includes(memberQuery.toLowerCase()))
+                .map((u)=>(
+                  <label key={u.id} className="flex items-center justify-between shadow rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Avatar name={u.name ?? u.username} size="sm" />
+                      <span>{u.name ? `${u.name}` : u.username}</span>
+                    </div>
+                    <Checkbox isSelected={selectedMemberIds.has(u.id)} onValueChange={(val)=>{
+                      setSelectedMemberIds(prev=>{ const s=new Set(prev); if(val) s.add(u.id); else s.delete(u.id); return s; });
+                    }} />
+                  </label>
+                ))}
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <Button variant="light" onPress={()=>setMemberModal(false)}>Close</Button>
+              <Button color="primary" onPress={async ()=>{
+                for (const id of Array.from(selectedMemberIds)) {
+                  if (!(task.assignees||[]).some(a=>a.id===id)) {
+                    await fetch(`/api/tasks/${task.id}/assignees`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId:id })});
+                  }
+                }
+                setMemberModal(false);
+                onChanged();
+              }}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+
+    {/* Attachment Modal (stage then save) */}
+    <Modal isOpen={attachModal} onOpenChange={setAttachModal}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">Attach</ModalHeader>
+            <div className="space-y-4">
+              <div>
+                <p className="text-tiny text-default-500 mb-1">Attach a file from your computer</p>
+                <input ref={fileInputRef} type="file" className="hidden" onChange={(e)=>{ const f=e.target.files?.[0]||null; setPendingFile(f); }} />
+                <Button onPress={()=>fileInputRef.current?.click()}>Choose a file</Button>
+                {pendingFile && <p className="text-tiny mt-1">Selected: {pendingFile.name}</p>}
+              </div>
+              <div>
+                <p className="text-tiny text-default-500 mb-1">Search or paste a link</p>
+                <Input placeholder="Find recent links or paste a new link" value={pendingLink} onValueChange={setPendingLink} />
+              </div>
+              <div>
+                <p className="text-tiny text-default-500 mb-1">Display text (optional)</p>
+                <Input placeholder="Text to display" value={pendingDisplay} onValueChange={setPendingDisplay} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="light" onPress={()=>{ setAttachModal(false); setPendingFile(null); setPendingLink(""); setPendingDisplay(""); }}>Cancel</Button>
+                <Button color="primary" onPress={async ()=>{ if(pendingFile){ await addAttachmentFile(pendingFile); } else if(pendingLink.trim()){ await addAttachmentLink(pendingLink.trim(), pendingDisplay.trim()||undefined); } setAttachModal(false); setPendingFile(null); setPendingLink(""); setPendingDisplay(""); }}>Save</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+
+    {/* Attachment Preview Modal */}
+    <Modal isOpen={preview.open} onOpenChange={(o)=>setPreview((p)=>({ ...p, open: o }))} size="3xl">
+      <ModalContent>
+        {() => (
+          <div className="p-4">
+            <ModalHeader className="p-0 mb-3">{preview.att?.name}</ModalHeader>
+            {preview.att ? (
+              preview.att.type?.startsWith('image/') ? (
+                <img src={preview.att.url} alt={preview.att.name} className="max-h-[75vh] w-full object-contain" />
+              ) : (preview.att.type === 'application/pdf' || (preview.att.url||'').toLowerCase().endsWith('.pdf')) ? (
+                <iframe src={preview.att.url} className="w-full h-[75vh]" />
+              ) : (
+                <p className="text-sm text-default-500">Preview tidak tersedia untuk tipe ini. <a className="text-primary" href={preview.att.url} target="_blank" rel="noreferrer">Buka di tab baru</a>.</p>
+              )
+            ) : null}
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+
+    {/* Confirm Modal */}
+    <Modal isOpen={confirm.open} onOpenChange={(o)=>setConfirm((p)=>({ ...p, open: o }))}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">{confirm.title || 'Konfirmasi'}</ModalHeader>
+            {confirm.message ? <p className="text-sm text-default-500">{confirm.message}</p> : null}
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="light" onPress={()=>setConfirm({ open:false, title:'', message:'', onConfirm:null })}>Cancel</Button>
+              <Button color="danger" onPress={async ()=>{ try { await confirm.onConfirm?.(); } finally { setConfirm({ open:false, title:'', message:'', onConfirm:null }); } }}>Delete</Button>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+
+    {/* Labels Modal (no color) */}
+    <Modal isOpen={labelModal} onOpenChange={setLabelModal}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">Labels</ModalHeader>
+            <Input placeholder="Search labels..." value={labelQuery} onValueChange={setLabelQuery} className="mb-3" />
+            <div className="space-y-2 mb-4">
+              {allLabels
+                .filter(l=> l.name.toLowerCase().includes(labelQuery.toLowerCase()))
+                .map((l)=>(
+                  <div key={l.id} className="flex items-center justify-between px-2 py-1 rounded-md border border-default-200">
+                    <span className="text-sm">{l.name}</span>
+                    {!isViewer && !l.selected && (
+                      <Button size="sm" variant="light" onPress={async ()=>{
+                        try { await fetch(`/api/tasks/${task.id}/labels`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ labelId: l.id }) }); setAllLabels((arr)=>arr.map(x=>x.id===l.id?{...x, selected:true}:x)); onChanged(); } catch {}
+                      }}>Add</Button>
+                    )}
+                    {l.selected && (<span className="text-tiny text-success">Selected</span>)}
+                  </div>
+                ))}
+            </div>
+            <div className="grid gap-2">
+              <Input label="Label name" value={newLabelName} onValueChange={setNewLabelName} variant="bordered" />
+              <div className="flex justify-end gap-2 mt-2">
+                <Button variant="light" onPress={()=>setLabelModal(false)}>Close</Button>
+                <Button color="primary" onPress={async ()=>{ if(!newLabelName.trim()) return; await fetch(`/api/tasks/${task.id}/labels`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: newLabelName.trim() }) }); setNewLabelName(""); try{ const r=await fetch(`/api/tasks/${task.id}/labels`, { credentials:'include' }); const d=await r.json(); setAllLabels(d.labels||[]);}catch{} onChanged(); }}>Add</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+
+    {/* Dates Modal */}
+    <Modal isOpen={dateModal} onOpenChange={setDateModal}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">Dates</ModalHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox isSelected={startEnabled} onValueChange={setStartEnabled} />
+                  Start date
+                </label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <Input type="date" value={startDate.split('T')[0]||''} onChange={(e)=>setStartDate(e.target.value + (startDate.includes('T')? ('T'+startDate.split('T')[1]) : 'T00:00'))} disabled={!startEnabled} />
+                  <Input type="time" value={startDate.split('T')[1]?.slice(0,5)||''} onChange={(e)=>setStartDate((startDate.split('T')[0]||new Date().toISOString().slice(0,10)) + 'T' + e.target.value)} disabled={!startEnabled} />
+                </div>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox defaultSelected isReadOnly />
+                  Due date
+                </label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <Input type="date" value={due.split('T')[0]||''} onChange={(e)=>setDue(e.target.value + (due.includes('T')? ('T'+due.split('T')[1]) : 'T12:00'))} />
+                  <Input type="time" value={due.split('T')[1]?.slice(0,5)||''} onChange={(e)=>setDue((due.split('T')[0]||new Date().toISOString().slice(0,10)) + 'T' + e.target.value)} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="light" onPress={()=>setDateModal(false)}>Close</Button>
+                <Button color="primary" onPress={async ()=>{ await saveDue(due); setDateModal(false); }}>Save</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>  
+  </>
+  );
+}
+
+function Column({ data, onAdd, onOpen }: { data: ColumnData; onAdd: (colId: string, title: string) => void; onOpen: (task: Task, col: ColumnData) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState("");
+  const { setNodeRef } = useDroppable({ id: data.id });
+  const formRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <div className="flex h-full w-72 sm:w-63 flex-col rounded-2xl border border-default-200 bg-content1 p-3">
+      <div className="flex items-center gap-3">
+        <h3 className="text-small font-semibold text-default-600">
+          {data.title}
+          <span className="ml-2 rounded-full bg-default-100 px-2 py-0.5 text-tiny text-default-600">
+            {data.tasks.length}
+          </span>
+        </h3>
+        <div className={`h-1 flex-1 rounded-full ${data.accent ?? ""}`} />
+      </div>
+      <SortableContext items={data.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <div ref={setNodeRef} className="mt-3 flex-1 space-y-3 overflow-y-auto pr-1 no-scrollbar">
+          {data.tasks.map((t) => (
+            <TaskCard key={t.id} {...t} onOpen={() => onOpen(t, data)} />
+          ))}
+        </div>
+      </SortableContext>
+      <div className="pt-2">
+        {adding ? (
+          <div ref={formRef} className="flex items-center gap-2">
+            <Input
+              autoFocus
+              size="sm"
+              variant="bordered"
+              placeholder="Task title"
+              value={text}
+              onValueChange={setText}
+              onBlur={(e) => {
+                const next = (e as any).relatedTarget as Node | null;
+                if (formRef.current && next && formRef.current.contains(next)) {
+                  return; // keep open when moving focus to the Add button
+                }
+                setTimeout(() => {
+                  setAdding(false);
+                  setText("");
+                }, 10);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && text.trim()) {
+                  onAdd(data.id, text.trim());
+                  setText("");
+                  setAdding(false);
+                }
+                if (e.key === "Escape") { setText(""); setAdding(false); }
+              }}
+            />
+            <Button
+              size="sm"
+              color="primary"
+              isDisabled={!text.trim()}
+              onPress={() => {
+                if (!text.trim()) return;
+                onAdd(data.id, text.trim());
+                setText("");
+                setAdding(false);
+              }}
+            >
+              Add
+            </Button>
+          </div>
+        ) : (
+          <Button fullWidth size="sm" variant="flat" startContent={<FiPlus />} onPress={() => setAdding(true)}>
+            New Task
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function WorkspaceBoardPage() {
+  const params = useParams<{ slug: string }>();
+  const slug = params.slug;
+  const router = useRouter();
+  const { columns, load, addTask, moveTask, replaceColumns, workspaceRole } = useBoard();
+  const { items: workspaces, fetch: fetchWorkspaces } = useWorkspaces();
+  const currentWorkspace = useMemo(() => workspaces.find((w) => w.slug === slug) || null, [workspaces, slug]);
+
+  useEffect(() => {
+    if (slug) {
+      load(slug);
+    }
+  }, [slug, load]);
+
+  useEffect(() => {
+    if (!currentWorkspace) {
+      try { fetchWorkspaces(); } catch {}
+    }
+  }, [currentWorkspace, fetchWorkspaces]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  const onDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    const t = columns.flatMap((c) => c.tasks).find((x) => x.id === id) || null;
+    setActiveTask(t);
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    setActiveTask(null);
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+    const cols = columns;
+    const fromColIndex = cols.findIndex((c) => c.tasks.some((t) => t.id === activeId));
+    if (fromColIndex === -1) return;
+    let toColIndex = cols.findIndex((c) => c.tasks.some((t) => t.id === overId));
+    if (toColIndex === -1) {
+      toColIndex = cols.findIndex((c) => c.id === overId);
+      if (toColIndex === -1) return;
+    }
+    const fromCol = cols[fromColIndex];
+    const toCol = cols[toColIndex];
+    const fromIdx = fromCol.tasks.findIndex((t) => t.id === activeId);
+    if (fromColIndex === toColIndex) {
+      let overIdx = toCol.tasks.findIndex((t) => t.id === overId);
+      if (overIdx === -1) overIdx = toCol.tasks.length - 1;
+      if (fromIdx === -1 || overIdx === -1) return;
+      const newTasks = arrayMove(toCol.tasks, fromIdx, overIdx);
+      const nextCols = [...cols];
+      nextCols[fromColIndex] = { ...toCol, tasks: newTasks };
+      replaceColumns(nextCols);
+      moveTask(activeId, toCol.id, overIdx);
+      return;
+    }
+    const overIdx = toCol.tasks.findIndex((t) => t.id === overId);
+    const insertIdx = overIdx >= 0 ? overIdx : toCol.tasks.length;
+    const task = fromCol.tasks[fromIdx];
+    if (!task) return;
+    const fromTasks = [...fromCol.tasks];
+    fromTasks.splice(fromIdx, 1);
+    const toTasks = [...toCol.tasks];
+    toTasks.splice(insertIdx, 0, task);
+    const nextCols = [...cols];
+    nextCols[fromColIndex] = { ...fromCol, tasks: fromTasks };
+    nextCols[toColIndex] = { ...toCol, tasks: toTasks };
+    replaceColumns(nextCols);
+    moveTask(activeId, toCol.id, insertIdx);
+  };
+
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<{ task: Task; column: { title: string; accent?: string | null } } | null>(null);
+  const openTask = (task: Task, col: ColumnData) => { setSelected({ task, column: { title: col.title, accent: col.accent ?? null } }); setOpen(true); };
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  return (
+    <div className="flex h-[calc(100dvh-64px-48px)] min-h-0 flex-col overflow-hidden">
+      <header className="flex items-center justify-between py-2 px-2 sm:px-0">
+        <div>
+          <p className="text-tiny text-default-500">Workspaces / {currentWorkspace?.name ?? slug}</p>
+          <h1 className="text-2xl font-semibold">{currentWorkspace?.name ?? slug}</h1>
+        </div>
+        <div className="hidden sm:flex items-center gap-2">
+          {workspaceRole === "ADMIN" && (
+            <Button color="danger" variant="bordered" onPress={() => setConfirmOpen(true)}>Delete</Button>
+          )}
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden no-scrollbar">
+        <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+          <div className="flex h-full min-w-full gap-4 pb-2 pr-2">
+            {columns.map((col) => (
+              <div key={col.id} className="flex h-full min-h-0 flex-col">
+                <Column data={col} onAdd={addTask} onOpen={(t) => openTask(t, col)} />
+              </div>
+            ))}
+          </div>
+          <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }}>
+            {activeTask ? (
+              <div className="pointer-events-none select-none">
+                <Card shadow="lg" className="w-72 sm:w-63 border border-default-200 bg-content1/95 shadow-2xl ring-1 ring-default-200/60 rotate-2 scale-[1.03]">
+                  {activeTask.tags && activeTask.tags.length > 0 ? (
+                    <div className="px-4 pt-3">
+                      <div className="flex -space-x-2">
+                        {activeTask.tags.slice(0, 3).map((tg) => (
+                          <span key={tg.id} className="inline-flex items-center rounded-full bg-default-200 text-default-700 px-2 py-0.5 text-tiny ring-2 ring-background">
+                            {tg.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  <CardBody className="gap-3">
+                    <p className="font-medium text-default-800">{activeTask.title}</p>
+                    {typeof activeTask.progress === "number" && (
+                      <Progress aria-label="progress" value={activeTask.progress} color={activeTask.progress >= 100 ? "success" : "warning"} className="max-w-full" />
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex -space-x-2">
+                        {(activeTask.assignees ?? []).slice(0, 3).map((a) => (
+                          <Avatar key={a.id} size="sm" name={a.name ?? a.username} className="ring-2 ring-background" />
+                        ))}
+                      </div>
+                      {formatDaysLeft(activeTask.dueDate) ? (
+                        <span className="text-tiny text-default-500">{formatDaysLeft(activeTask.dueDate)}</span>
+                      ) : null}
+                    </div>
+                  </CardBody>
+                </Card>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+
+      <div className="sm:hidden flex items-center gap-2 px-2 pb-1 pt-1">
+        <Button variant="flat" size="sm">Share</Button>
+      </div>
+
+      <Modal isOpen={open} onOpenChange={setOpen} size="5xl">
+        <ModalContent>
+          {() => (
+            <TaskDetail
+              task={selected?.task || null}
+              columnTitle={selected?.column.title || ""}
+              columnAccent={selected?.column.accent}
+              slug={slug}
+              role={workspaceRole}
+              onClose={() => setOpen(false)}
+              onChanged={() => load(slug)}
+            />
+          )}
+        </ModalContent>
+      </Modal>
+      <Modal isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
+        <ModalContent>
+          {() => (
+            <div className="p-6">
+              <ModalHeader className="p-0 mb-2">Delete Workspace</ModalHeader>
+              <p className="text-small text-default-600">This action cannot be undone. Are you sure you want to delete this workspace?</p>
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="light" onPress={() => setConfirmOpen(false)}>Cancel</Button>
+                <Button color="danger" onPress={async () => {
+                  try {
+                    const res = await fetch(`/api/workspaces/${slug}`, { method: 'DELETE', credentials: 'include' });
+                    if (!res.ok) throw new Error('Failed');
+                    setConfirmOpen(false);
+                    // refresh sidebar workspaces immediately
+                    try { useWorkspaces.getState().fetch(); } catch {}
+                    router.push('/admin/dashboard');
+                  } catch {
+                    setConfirmOpen(false);
+                  }
+                }}>Delete</Button>
+              </div>
+            </div>
+          )}
+        </ModalContent>
+      </Modal>
+    </div>
+  );
+}

@@ -16,37 +16,33 @@ This is a template for creating applications using Next.js 14 (app directory) an
 
 ## How to Use
 
-### Use the template with create-next-app
+### Backend setup (Prisma + MySQL)
 
-To create a new project based on this template using `create-next-app`, run the following command:
+1) Copy `.env.example` to `.env` and set `DATABASE_URL` and `JWT_SECRET`.
 
-```bash
-npx create-next-app -e https://github.com/heroui-inc/next-app-template
-```
-
-### Install dependencies
-
-You can use one of them `npm`, `yarn`, `pnpm`, `bun`, Example using `npm`:
-
+2) Install packages:
 ```bash
 npm install
 ```
+
+3) Generate client and run migrations:
+```bash
+npm run prisma:generate
+npm run prisma:migrate -- --name init
+```
+
+4) Seed admin user and sample workspace:
+```bash
+npm run prisma:seed
+```
+
+The default admin is `username: lysca`, `password: juni1996!`.
 
 ### Run the development server
 
 ```bash
 npm run dev
 ```
-
-### Setup pnpm (optional)
-
-If you are using `pnpm`, you need to add the following code to your `.npmrc` file:
-
-```bash
-public-hoist-pattern[]=*@heroui/*
-```
-
-After modifying the `.npmrc` file, you need to run `pnpm install` again to ensure that the dependencies are installed correctly.
 
 ## License
 

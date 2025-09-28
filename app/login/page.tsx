@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { api } from "@/lib/axios";
+import { toast } from "react-hot-toast";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
@@ -9,6 +12,7 @@ import { Link } from "@heroui/link";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -26,7 +30,7 @@ export default function LoginPage() {
     setTimeout(() => setShake((s) => ({ ...s, [key]: false })), 350);
   };
 
-  const onSubmit = (e?: React.FormEvent) => {
+  const onSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setSubmitAttempted(true);
     const eEmpty = email.trim() === "";
@@ -34,8 +38,16 @@ export default function LoginPage() {
     if (eEmpty) triggerShake("email");
     if (pEmpty) triggerShake("password");
     if (eEmpty || pEmpty) return;
-    // TODO: handle real auth
-    console.log("Sign in:", { email, password });
+    const payload = email.includes("@") ? { email, password } : { username: email, password };
+    await toast.promise(
+      api.post("/api/auth/login", payload),
+      {
+        loading: "Signing in...",
+        success: "Berhasil masuk",
+        error: (e) => e?.response?.data?.message ?? "Login gagal",
+      },
+    );
+    router.push("/admin/dashboard");
   };
 
   return (
@@ -50,13 +62,13 @@ export default function LoginPage() {
           </CardHeader>
           <CardBody className="gap-4">
             <Input
-              placeholder="Email Address"
+              placeholder="Email or Username"
               variant="bordered"
-              type="email"
+              type="text"
               value={email}
               onValueChange={setEmail}
               isInvalid={emailInvalid}
-              errorMessage={emailInvalid ? "Email is required" : undefined}
+              errorMessage={emailInvalid ? "Email or username is required" : undefined}
               classNames={{ inputWrapper: shake.email ? "animate-shake" : undefined }}
             />
 

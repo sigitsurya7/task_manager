@@ -1,0 +1,663 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useBoard } from "@/stores/board";
+import { useWorkspaces } from "@/stores/workspaces";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@heroui/button";
+import { Card, CardBody, CardHeader } from "@heroui/card";
+import { Avatar } from "@heroui/avatar";
+import { Chip } from "@heroui/chip";
+import { Progress } from "@heroui/progress";
+import { Input } from "@heroui/input";
+import { Modal, ModalContent, ModalHeader } from "@heroui/modal";
+import { FiPlus } from "react-icons/fi";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragStartEvent,
+  DragOverlay,
+} from "@dnd-kit/core";
+import { useDroppable } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+type Task = {
+  id: string;
+  title: string;
+  progress?: number;
+  dueDate?: string | null;
+  tags?: { id: string; name: string; color: string }[];
+  assignees?: { id: string; name: string | null; username: string }[];
+};
+type ColumnData = { id: string; title: string; accent?: string | null; tasks: Task[] };
+
+function formatDaysLeft(dueDate?: string | null) {
+  if (!dueDate) return "";
+  const now = new Date();
+  const due = new Date(dueDate);
+  const ms = due.getTime() - now.getTime();
+  const days = Math.ceil(ms / (1000 * 60 * 60 * 24));
+  if (Number.isNaN(days) || days < 0) return "";
+  return `${days}d left`;
+}
+
+function TaskCard({ id, title, progress, tags, assignees, dueDate, onOpen }: Task & { onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.25 : 1,
+    zIndex: isDragging ? 50 : "auto",
+  } as CSSProperties;
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <Card
+        isPressable
+        shadow="sm"
+        className="border border-default-200 hover:border-primary w-full cursor-grab active:cursor-grabbing touch-none select-none"
+        onPress={() => { if (!isDragging) onOpen(); }}
+        {...listeners}
+      >
+        <CardHeader className="gap-2">
+          {tags && tags.length > 0 ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              {tags.slice(0, 2).map((tg) => (
+                <Chip key={tg.id} size="sm" variant="flat" color="secondary">{tg.name}</Chip>
+              ))}
+              {tags.length > 2 ? (
+                <Chip size="sm" variant="flat">+{tags.length - 2}</Chip>
+              ) : null}
+            </div>
+          ) : null}
+        </CardHeader>
+        <CardBody className="gap-3">
+          <p className="font-medium text-default-800">{title}</p>
+          {(assignees && assignees.length > 0) || formatDaysLeft(dueDate) ? (
+            <div className="flex items-center justify-between">
+              <div className="flex -space-x-2">
+                {(assignees ?? []).slice(0, 3).map((a) => (
+                  <Avatar key={a.id} size="sm" name={a.name ?? a.username} className="ring-2 ring-background" />
+                ))}
+              </div>
+              {formatDaysLeft(dueDate) ? (
+                <span className="text-tiny text-default-500">{formatDaysLeft(dueDate)}</span>
+              ) : <span />}
+            </div>
+          ) : null}
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function TaskDetail({ task, column, slug, role, onClose, onChanged }: { task: Task | null; column: string; slug: string; role: "ADMIN" | "MEMBER" | "VIEWER" | null; onClose: () => void; onChanged: () => void }) {
+  const isViewer = role === "VIEWER";
+  const [desc, setDesc] = useState("");
+  const [due, setDue] = useState<string>("");
+  const [members, setMembers] = useState<{ id: string; email: string; username: string; name: string | null; role: string }[]>([]);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<string | null>(null);
+  const [labelName, setLabelName] = useState("");
+  const [labelColor, setLabelColor] = useState("#16a34a");
+  const [checklists, setChecklists] = useState<{ id: string; title: string; items: { id: string; title: string; done: boolean }[] }[]>([]);
+  const [newItem, setNewItem] = useState<Record<string, string>>({});
+  const [attachments, setAttachments] = useState<{ id: string; name: string; url: string; type: string }[]>([]);
+  const [comment, setComment] = useState("");
+  const [checklistModal, setChecklistModal] = useState(false);
+  const [checklistTitle, setChecklistTitle] = useState("Checklist");
+  const [attachModal, setAttachModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!task) return;
+    setDesc("");
+    setDue(task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 16) : "");
+    // load workspace members
+    (async () => {
+      try {
+        const res = await fetch(`/api/workspaces/${slug}/members`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setMembers(data.members.map((m: any) => ({ ...m.user, role: m.role })));
+        }
+      } catch {}
+    })();
+  }, [task, slug]);
+
+  if (!task) return null;
+
+  const saveDesc = async () => {
+    if (isViewer) return;
+    try {
+      await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: desc }) });
+      onChanged();
+    } catch {}
+  };
+  const saveDue = async (val: string) => {
+    if (isViewer) return;
+    try {
+      setDue(val);
+      await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dueDate: val ? new Date(val).toISOString() : null }) });
+      onChanged();
+    } catch {}
+  };
+  const addAssignee = async () => {
+    if (isViewer || !selectedMember) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/assignees`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: selectedMember }) });
+      setSelectedMember(null);
+      setAddMemberOpen(false);
+      onChanged();
+    } catch {}
+  };
+  const addLabel = async () => {
+    if (isViewer || !labelName.trim()) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/labels`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: labelName.trim(), color: labelColor }) });
+      setLabelName("");
+      onChanged();
+    } catch {}
+  };
+
+  const addChecklistGroup = () => {
+    if (!checklistTitle.trim()) return;
+    setChecklists((arr) => [{ id: crypto.randomUUID(), title: checklistTitle.trim(), items: [] }, ...arr]);
+    setChecklistTitle("Checklist");
+    setChecklistModal(false);
+  };
+  const addChecklistItem = (groupId: string) => {
+    const title = (newItem[groupId] || "").trim();
+    if (!title) return;
+    setChecklists((arr) => arr.map((g) => g.id === groupId ? { ...g, items: [{ id: crypto.randomUUID(), title, done: false }, ...g.items] } : g));
+    setNewItem((m) => ({ ...m, [groupId]: "" }));
+  };
+  const addAttachmentFile = (file: File) => {
+    const url = URL.createObjectURL(file);
+    setAttachments((a) => [{ id: crypto.randomUUID(), name: file.name, url, type: file.type || 'file' }, ...a]);
+  };
+  const addAttachmentLink = (link: string) => {
+    try {
+      const url = new URL(link);
+      setAttachments((a) => [{ id: crypto.randomUUID(), name: url.hostname, url: link, type: 'link' }, ...a]);
+    } catch {}
+  };
+  const submitComment = async () => {
+    if (!comment.trim()) return;
+    try {
+      await fetch(`/api/comments`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId: task.id, body: comment }) });
+      setComment("");
+    } catch {}
+  };
+
+  return (
+    <div className="grid w-full grid-cols-1 gap-6 p-8 md:grid-cols-[1fr_360px]">
+      <div>
+        <ModalHeader className="flex items-center gap-3 p-0">
+          <Chip variant="flat">{column}</Chip>
+          <h2 className="text-2xl font-semibold">{task.title}</h2>
+        </ModalHeader>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {!isViewer && <Button size="sm" variant="flat">+ Add</Button>}
+          {!isViewer && <Button size="sm" variant="flat" onPress={() => setChecklistModal(true)}>Checklist</Button>}
+          {!isViewer && <Button size="sm" variant="flat" onPress={() => setAttachModal(true)}>Attachment</Button>}
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-tiny text-default-500">Members</p>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              {(task.assignees ?? []).map((m) => (
+                <Avatar key={m.id} name={m.name ?? m.username} size="sm" className="ring-2 ring-background" />
+              ))}
+              {!isViewer && (
+                <>
+                  <Button isIconOnly size="sm" variant="light" onPress={() => setAddMemberOpen((v) => !v)}>+</Button>
+                  {addMemberOpen && (
+                    <select className="border rounded-md px-2 py-1 text-sm" value={selectedMember ?? ""} onChange={(e) => setSelectedMember(e.target.value)}>
+                      <option value="" disabled>Pilih member</option>
+                      {members.map((u) => (
+                        <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.username})` : u.username}</option>
+                      ))}
+                    </select>
+                  )}
+                  {addMemberOpen && <Button size="sm" onPress={addAssignee}>Tambah</Button>}
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-tiny text-default-500">Labels</p>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              {(task.tags ?? []).map((l) => (
+                <Chip key={l.id} color="secondary" variant="flat">{l.name}</Chip>
+              ))}
+              {!isViewer && (
+                <>
+                  <input type="text" placeholder="Label name" className="border rounded-md px-2 py-1 text-sm" value={labelName} onChange={(e)=>setLabelName(e.target.value)} />
+                  <input type="color" className="h-8 w-10 rounded" value={labelColor} onChange={(e)=>setLabelColor(e.target.value)} />
+                  <Button size="sm" variant="light" onPress={addLabel}>+</Button>
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-tiny text-default-500">Due date</p>
+            <div className="mt-2">
+              <input type="datetime-local" className="border rounded-md px-2 py-1 text-sm" value={due} onChange={(e)=>saveDue(e.target.value)} disabled={isViewer} />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <p className="text-small text-default-500">Description</p>
+          <textarea
+            className="mt-2 min-h-28 w-full resize-y rounded-xl border border-default-200 bg-content2 p-3 outline-none"
+            placeholder="Add a more detailed description..."
+            value={desc}
+            onChange={(e)=>setDesc(e.target.value)}
+            onBlur={saveDesc}
+            readOnly={isViewer}
+          />
+        </div>
+
+        {/* Checklist groups */}
+        {checklists.map((g) => {
+          const total = g.items.length || 1;
+          const done = g.items.filter((i) => i.done).length;
+          const percent = Math.round((done / total) * 100);
+          return (
+            <div key={g.id} className="mt-6 border border-default-200 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <p className="font-medium">{g.title}</p>
+                {!isViewer && <Button size="sm" variant="light" color="danger" onPress={() => setChecklists((arr)=>arr.filter((x)=>x.id!==g.id))}>Delete</Button>}
+              </div>
+              <div className="mt-2">
+                <Progress aria-label="progress" value={percent} className="max-w-full" />
+              </div>
+              {!isViewer && (
+                <div className="mt-2">
+                  <textarea
+                    className="w-full border rounded-md px-2 py-1"
+                    placeholder="Add an item"
+                    value={newItem[g.id] || ""}
+                    onChange={(e)=>setNewItem((m)=>({ ...m, [g.id]: e.target.value }))}
+                  />
+                  <div className="flex items-center gap-3 mt-2">
+                    <Button size="sm" onPress={()=>addChecklistItem(g.id)}>Add</Button>
+                    <Button size="sm" variant="light" onPress={()=>setNewItem((m)=>({ ...m, [g.id]: "" }))}>Cancel</Button>
+                    <span className="text-tiny text-default-500">Assign</span>
+                    <span className="text-tiny text-default-500">Due date</span>
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 space-y-2">
+                {g.items.map((c) => (
+                  <label key={c.id} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={c.done} onChange={(e)=>setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, done:e.target.checked}:it)}:gr))} disabled={isViewer} />
+                    <input className="flex-1 border rounded-md px-2 py-1" value={c.title} onChange={(e)=>setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, title:e.target.value}:it)}:gr))} readOnly={isViewer} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Attachments */}
+        <div className="mt-6">
+          {attachments.length > 0 && <p className="text-small text-default-500 mb-2">Attachments</p>}
+          {!isViewer && (
+            <div className="mb-2">
+              <Button size="sm" variant="flat" onPress={() => setAttachModal(true)}>Add attachment</Button>
+            </div>
+          )}
+          {attachments.length > 0 && (
+            <div className="overflow-x-auto rounded-lg border border-default-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-content2 text-default-500">
+                    <th className="text-left px-3 py-2">Name</th>
+                    <th className="text-left px-3 py-2">Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attachments.map((a) => (
+                    <tr key={a.id} className="border-t border-default-200">
+                      <td className="px-3 py-2"><a className="text-primary" href={a.url} target="_blank" rel="noreferrer">{a.name}</a></td>
+                      <td className="px-3 py-2">{a.type || 'file'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <ModalHeader className="p-0">Comments and activity</ModalHeader>
+        <div className="mt-3 space-y-4">
+          <input
+            placeholder="Write a comment..."
+            className="w-full border rounded-xl px-3 py-2 bg-content2"
+            value={comment}
+            onChange={(e)=>setComment(e.target.value)}
+            onKeyDown={(e)=>{ if(e.key==='Enter'){ submitComment(); } }}
+            onPaste={(e)=>{
+              const items = e.clipboardData?.files;
+              if (items && items.length) {
+                addAttachmentFile(items[0]);
+              }
+            }}
+          />
+          <div className="flex items-start gap-3 rounded-xl border border-default-200 p-3">
+            <Avatar name={task.assignees?.[0]?.name ?? 'AL'} size="sm" />
+            <div>
+              <p className="text-small"><span className="font-medium">You</span> added this card to {column}</p>
+              <p className="text-tiny text-default-500">just now</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <Modal isOpen={checklistModal} onOpenChange={setChecklistModal}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">Add checklist</ModalHeader>
+            <div className="grid gap-3">
+              <Input autoFocus label="Title" variant="bordered" value={checklistTitle} onValueChange={setChecklistTitle} />
+              <div className="flex justify-end gap-2">
+                <Button variant="light" onPress={() => setChecklistModal(false)}>Cancel</Button>
+                <Button color="primary" onPress={addChecklistGroup}>Add</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+    <Modal isOpen={attachModal} onOpenChange={setAttachModal}>
+      <ModalContent>
+        {() => (
+          <div className="p-6">
+            <ModalHeader className="p-0 mb-3">Attach</ModalHeader>
+            <div className="space-y-4">
+              <div>
+                <p className="text-tiny text-default-500 mb-1">Attach a file from your computer</p>
+                <input ref={fileInputRef} type="file" className="hidden" onChange={(e)=>{ const f=e.target.files?.[0]; if (f) { addAttachmentFile(f); setAttachModal(false); } }} />
+                <Button onPress={()=>fileInputRef.current?.click()}>Choose a file</Button>
+              </div>
+              <div>
+                <p className="text-tiny text-default-500 mb-1">Search or paste a link</p>
+                <Input placeholder="Find recent links or paste a new link" onKeyDown={(e)=>{ if(e.key==='Enter'){ const v=(e.target as HTMLInputElement).value.trim(); if(v){ addAttachmentLink(v); setAttachModal(false);} } }} />
+              </div>
+              <div>
+                <p className="text-tiny text-default-500 mb-1">Display text (optional)</p>
+                <Input placeholder="Text to display" onKeyDown={(e)=>{ if(e.key==='Enter'){ const v=(e.target as HTMLInputElement).value.trim(); /* keep as UI only */ } }} />
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalContent>
+    </Modal>
+  );
+}
+
+function Column({ data, onAdd, onOpen }: { data: ColumnData; onAdd: (colId: string, title: string) => void; onOpen: (task: Task) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState("");
+  const { setNodeRef } = useDroppable({ id: data.id });
+  const formRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <div className="flex h-full w-72 sm:w-63 flex-col rounded-2xl border border-default-200 bg-content1 p-3">
+      <div className="flex items-center gap-3">
+        <h3 className="text-small font-semibold text-default-600">
+          {data.title}
+          <span className="ml-2 rounded-full bg-default-100 px-2 py-0.5 text-tiny text-default-600">
+            {data.tasks.length}
+          </span>
+        </h3>
+        <div className={`h-1 flex-1 rounded-full ${data.accent ?? ""}`} />
+      </div>
+      <SortableContext items={data.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <div ref={setNodeRef} className="mt-3 flex-1 space-y-3 overflow-y-auto pr-1 no-scrollbar">
+          {data.tasks.map((t) => (
+            <TaskCard key={t.id} {...t} onOpen={() => onOpen(t)} />
+          ))}
+        </div>
+      </SortableContext>
+      <div className="pt-2">
+        {adding ? (
+          <div ref={formRef} className="flex items-center gap-2">
+            <Input
+              autoFocus
+              size="sm"
+              variant="bordered"
+              placeholder="Task title"
+              value={text}
+              onValueChange={setText}
+              onBlur={(e) => {
+                const next = (e as any).relatedTarget as Node | null;
+                if (formRef.current && next && formRef.current.contains(next)) {
+                  return; // keep open when moving focus to the Add button
+                }
+                setTimeout(() => {
+                  setAdding(false);
+                  setText("");
+                }, 10);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && text.trim()) {
+                  onAdd(data.id, text.trim());
+                  setText("");
+                  setAdding(false);
+                }
+                if (e.key === "Escape") { setText(""); setAdding(false); }
+              }}
+            />
+            <Button
+              size="sm"
+              color="primary"
+              isDisabled={!text.trim()}
+              onPress={() => {
+                if (!text.trim()) return;
+                onAdd(data.id, text.trim());
+                setText("");
+                setAdding(false);
+              }}
+            >
+              Add
+            </Button>
+          </div>
+        ) : (
+          <Button fullWidth size="sm" variant="flat" startContent={<FiPlus />} onPress={() => setAdding(true)}>
+            New Task
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function WorkspaceBoardPage() {
+  const params = useParams<{ slug: string }>();
+  const slug = params.slug;
+  const router = useRouter();
+  const { columns, load, addTask, moveTask, replaceColumns, workspaceRole } = useBoard();
+
+  useEffect(() => {
+    if (slug) {
+      load(slug);
+    }
+  }, [slug, load]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  const onDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    const t = columns.flatMap((c) => c.tasks).find((x) => x.id === id) || null;
+    setActiveTask(t);
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    setActiveTask(null);
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+    const cols = columns;
+    const fromColIndex = cols.findIndex((c) => c.tasks.some((t) => t.id === activeId));
+    if (fromColIndex === -1) return;
+    let toColIndex = cols.findIndex((c) => c.tasks.some((t) => t.id === overId));
+    if (toColIndex === -1) {
+      toColIndex = cols.findIndex((c) => c.id === overId);
+      if (toColIndex === -1) return;
+    }
+    const fromCol = cols[fromColIndex];
+    const toCol = cols[toColIndex];
+    const fromIdx = fromCol.tasks.findIndex((t) => t.id === activeId);
+    if (fromColIndex === toColIndex) {
+      let overIdx = toCol.tasks.findIndex((t) => t.id === overId);
+      if (overIdx === -1) overIdx = toCol.tasks.length - 1;
+      if (fromIdx === -1 || overIdx === -1) return;
+      const newTasks = arrayMove(toCol.tasks, fromIdx, overIdx);
+      const nextCols = [...cols];
+      nextCols[fromColIndex] = { ...toCol, tasks: newTasks };
+      replaceColumns(nextCols);
+      moveTask(activeId, toCol.id, overIdx);
+      return;
+    }
+    const overIdx = toCol.tasks.findIndex((t) => t.id === overId);
+    const insertIdx = overIdx >= 0 ? overIdx : toCol.tasks.length;
+    const task = fromCol.tasks[fromIdx];
+    if (!task) return;
+    const fromTasks = [...fromCol.tasks];
+    fromTasks.splice(fromIdx, 1);
+    const toTasks = [...toCol.tasks];
+    toTasks.splice(insertIdx, 0, task);
+    const nextCols = [...cols];
+    nextCols[fromColIndex] = { ...fromCol, tasks: fromTasks };
+    nextCols[toColIndex] = { ...toCol, tasks: toTasks };
+    replaceColumns(nextCols);
+    moveTask(activeId, toCol.id, insertIdx);
+  };
+
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<{ task: Task; column: string } | null>(null);
+  const openTask = (task: Task, column: string) => { setSelected({ task, column }); setOpen(true); };
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  return (
+    <div className="flex h-[calc(100dvh-64px-48px)] min-h-0 flex-col overflow-hidden">
+      <header className="flex items-center justify-between py-2 px-2 sm:px-0">
+        <div>
+          <p className="text-tiny text-default-500">Workspaces / Board</p>
+          <h1 className="text-2xl font-semibold">Board</h1>
+        </div>
+        <div className="hidden sm:flex items-center gap-2">
+          <Button variant="flat">Share</Button>
+          {workspaceRole === "ADMIN" && (
+            <Button color="danger" variant="bordered" onPress={() => setConfirmOpen(true)}>Delete</Button>
+          )}
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden no-scrollbar">
+        <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+          <div className="flex h-full min-w-full gap-4 pb-2 pr-2">
+            {columns.map((col) => (
+              <div key={col.id} className="flex h-full min-h-0 flex-col">
+                <Column data={col} onAdd={addTask} onOpen={(t) => openTask(t, col.title)} />
+              </div>
+            ))}
+          </div>
+          <DragOverlay dropAnimation={{ duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }}>
+            {activeTask ? (
+              <div className="pointer-events-none select-none">
+                <Card shadow="lg" className="w-72 sm:w-63 border border-default-200 bg-content1/95 shadow-2xl ring-1 ring-default-200/60 rotate-2 scale-[1.03]">
+                  <CardHeader>
+                    {activeTask.tags && activeTask.tags.length > 0 ? (
+                      <Chip size="sm" variant="flat" color="secondary">{activeTask.tags[0].name}</Chip>
+                    ) : null}
+                  </CardHeader>
+                  <CardBody className="gap-3">
+                    <p className="font-medium text-default-800">{activeTask.title}</p>
+                    {typeof activeTask.progress === "number" && (
+                      <Progress aria-label="progress" value={activeTask.progress} color={activeTask.progress >= 100 ? "success" : "warning"} className="max-w-full" />
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex -space-x-2">
+                        {(activeTask.assignees ?? []).slice(0, 3).map((a) => (
+                          <Avatar key={a.id} size="sm" name={a.name ?? a.username} className="ring-2 ring-background" />
+                        ))}
+                      </div>
+                      {formatDaysLeft(activeTask.dueDate) ? (
+                        <span className="text-tiny text-default-500">{formatDaysLeft(activeTask.dueDate)}</span>
+                      ) : null}
+                    </div>
+                  </CardBody>
+                </Card>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
+
+      <div className="sm:hidden flex items-center gap-2 px-2 pb-1 pt-1">
+        <Button variant="flat" size="sm">Share</Button>
+      </div>
+
+      <Modal isOpen={open} onOpenChange={setOpen} size="5xl">
+        <ModalContent>
+          {() => (
+            <TaskDetail
+              task={selected?.task || null}
+              column={selected?.column || ""}
+              slug={slug}
+              role={workspaceRole}
+              onClose={() => setOpen(false)}
+              onChanged={() => load(slug)}
+            />
+          )}
+        </ModalContent>
+      </Modal>
+      <Modal isOpen={confirmOpen} onOpenChange={setConfirmOpen}>
+        <ModalContent>
+          {() => (
+            <div className="p-6">
+              <ModalHeader className="p-0 mb-2">Delete Workspace</ModalHeader>
+              <p className="text-small text-default-600">This action cannot be undone. Are you sure you want to delete this workspace?</p>
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="light" onPress={() => setConfirmOpen(false)}>Cancel</Button>
+                <Button color="danger" onPress={async () => {
+                  try {
+                    const res = await fetch(`/api/workspaces/${slug}`, { method: 'DELETE', credentials: 'include' });
+                    if (!res.ok) throw new Error('Failed');
+                    setConfirmOpen(false);
+                    // refresh sidebar workspaces immediately
+                    try { useWorkspaces.getState().fetch(); } catch {}
+                    router.push('/admin/dashboard');
+                  } catch {
+                    setConfirmOpen(false);
+                  }
+                }}>Delete</Button>
+              </div>
+            </div>
+          )}
+        </ModalContent>
+      </Modal>
+    </div>
+  );
+}
