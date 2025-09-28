@@ -135,7 +135,7 @@ export default function UsersPage() {
               className="min-w-[200px]"
             >
               {workspaces.map((w) => (
-                <SelectItem key={w.slug} value={w.slug}>{w.name}</SelectItem>
+                <SelectItem key={w.slug}>{w.name}</SelectItem>
               ))}
             </Select>
             <Input size="sm" placeholder="Search users..." value={q} onValueChange={(v)=>{ setQ(v); setPage(1); }} className="w-56" />
@@ -298,3 +298,4 @@ export default function UsersPage() {
     </div>
   );
 }
+

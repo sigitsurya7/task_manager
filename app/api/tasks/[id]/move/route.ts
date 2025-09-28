@@ -4,7 +4,8 @@ import { Prisma } from "@prisma/client";
 import { getAuth } from "@/lib/auth";
 import { publish } from "@/lib/events";
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const { toColumnId, position } = await req.json().catch(() => ({}));

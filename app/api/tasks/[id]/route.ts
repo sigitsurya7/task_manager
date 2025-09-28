@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { publish } from "@/lib/events";
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const task = await prisma.task.findUnique({
     where: { id: params.id },
     include: {
@@ -24,7 +25,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   });
 }
 
-export async function PATCH(_req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(_req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
 
@@ -53,7 +55,8 @@ export async function PATCH(_req: Request, { params }: { params: { id: string } 
   return NextResponse.json({ task: updated });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
 

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
-import { promises as fs } from "fs";
+import fs from "node:fs/promises";
 import path from "path";
 import crypto from "crypto";
 
 export const runtime = "nodejs";
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const task = await prisma.task.findUnique({ where: { id: params.id }, include: { project: { include: { workspace: true } } } });
@@ -19,7 +20,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return NextResponse.json({ attachments: list });
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
 
@@ -35,7 +37,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     if (arrayBuffer.byteLength > 20 * 1024 * 1024) {
       return NextResponse.json({ message: 'file too large' }, { status: 413 });
     }
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = new Uint8Array(arrayBuffer as ArrayBuffer);
     const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
     await fs.mkdir(uploadsDir, { recursive: true });
     const rand = crypto.randomBytes(4).toString('hex');

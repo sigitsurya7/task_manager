@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const { title, done } = await req.json().catch(() => ({}));
@@ -10,7 +11,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ item: updated });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const item = await prisma.checklistItem.findUnique({

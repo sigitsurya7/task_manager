@@ -1,8 +1,8 @@
 export type SiteConfig = typeof siteConfig;
 
 export const siteConfig = {
-  name: "SiGelo",
-  description: "Gelo Trelo.",
+  name: "OjoLilo - Satu Papan, Satu Tujuan",
+  description: "Satu papan, satu tujuan. Rencana jadi nyata.",
   navItems: [
     {
       label: "Home",

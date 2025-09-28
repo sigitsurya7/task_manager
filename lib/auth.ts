@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 
-const TOKEN_NAME = "token";
+export const TOKEN_NAME = "token";
 const ALG = "HS256";
 
 function getSecret() {
@@ -10,28 +10,23 @@ function getSecret() {
   return new TextEncoder().encode(secret);
 }
 
+// Returns signed JWT; caller sets cookie on NextResponse
 export async function createSession(payload: { sub: string; email: string }) {
   const token = await new SignJWT(payload)
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
     .setExpirationTime("7d")
     .sign(getSecret());
-
-  cookies().set(TOKEN_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-  });
+  return token;
 }
 
+// Deprecated: Use NextResponse().cookies.set to clear cookie in the route
 export function clearSession() {
-  cookies().set(TOKEN_NAME, "", { httpOnly: true, maxAge: 0, path: "/" });
+  /* no-op */
 }
 
 export async function getAuth() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const token = cookieStore.get(TOKEN_NAME)?.value;
   if (!token) return null;
   try {
@@ -41,4 +36,3 @@ export async function getAuth() {
     return null;
   }
 }
-

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 
-export async function GET(_req: Request, { params }: { params: { slug: string } }) {
+export async function GET(_req: Request, context: any) {
+  const { params } = context as { params: { slug: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: { include: { user: { select: { id: true, email: true, username: true, name: true } } } } } });
@@ -12,7 +13,8 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
   return NextResponse.json({ members: ws.members.map((m) => ({ id: m.id, role: m.role, user: m.user })) });
 }
 
-export async function POST(req: Request, { params }: { params: { slug: string } }) {
+export async function POST(req: Request, context: any) {
+  const { params } = context as { params: { slug: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: true } });
@@ -31,7 +33,8 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   return NextResponse.json({ member: { id: mem.id, role: mem.role, user: { id: user.id, email: user.email, username: user.username, name: user.name } } });
 }
 
-export async function PATCH(req: Request, { params }: { params: { slug: string } }) {
+export async function PATCH(req: Request, context: any) {
+  const { params } = context as { params: { slug: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: true } });
@@ -44,7 +47,8 @@ export async function PATCH(req: Request, { params }: { params: { slug: string }
   return NextResponse.json({ member: updated });
 }
 
-export async function DELETE(req: Request, { params }: { params: { slug: string } }) {
+export async function DELETE(req: Request, context: any) {
+  const { params } = context as { params: { slug: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: true } });

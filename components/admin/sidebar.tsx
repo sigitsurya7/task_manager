@@ -308,7 +308,7 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
                   onSelectionChange={(k) => setIconKey(Array.from(k)[0] as string)}
                 >
                   {iconOptions.map((key) => (
-                    <SelectItem key={key} value={key} startContent={<span className="text-lg">{iconMap[key]}</span>}>
+                    <SelectItem key={key} startContent={<span className="text-lg">{iconMap[key]}</span>}>
                       {key}
                     </SelectItem>
                   ))}
@@ -321,7 +321,7 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
                   description="Pilih dari user yang terdaftar"
                 >
                   {users.map((u) => (
-                    <SelectItem key={u.id} value={u.id} aria-label={u.username}>
+                    <SelectItem key={u.id} aria-label={u.username}>
                       {u.name}
                     </SelectItem>
                   ))}

@@ -6,7 +6,8 @@ import path from "path";
 
 export const runtime = "nodejs";
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const att = await prisma.attachment.findUnique({ where: { id: params.id }, include: { task: { include: { project: { include: { workspace: true } } } } } });
@@ -24,4 +25,3 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   await prisma.attachment.delete({ where: { id: att.id } });
   return NextResponse.json({ ok: true });
 }
-

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const { labelId, name, color } = await req.json().catch(() => ({}));
@@ -26,7 +27,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   return NextResponse.json({ ok: true });
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const task = await prisma.task.findUnique({ where: { id: params.id }, include: { project: { include: { workspace: true } }, labels: true } });
@@ -41,7 +43,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return NextResponse.json({ labels });
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const { labelId } = await req.json().catch(() => ({}));

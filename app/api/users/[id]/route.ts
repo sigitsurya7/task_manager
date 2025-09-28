@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, context: any) {
+  const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
   const adminOf = await prisma.workspaceMember.findFirst({ where: { userId: String(auth.sub), role: "ADMIN" } });
@@ -27,4 +28,3 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const updated = await prisma.user.update({ where: { id: params.id }, data });
   return NextResponse.json({ user: { id: updated.id, username: updated.username, email: updated.email, name: updated.name, createdAt: updated.createdAt } });
 }
-
