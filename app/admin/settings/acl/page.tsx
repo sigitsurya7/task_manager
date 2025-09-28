@@ -17,7 +17,7 @@ export default function AclPage() {
         </CardHeader>
         <CardBody>
           <p className="text-sm text-default-600 mb-4">Role-based access control per Workspace.</p>
-          <Table aria-label="ACL roles">
+          <Table aria-label="ACL roles" removeWrapper>
             <TableHeader>
               <TableColumn>Role</TableColumn>
               <TableColumn>Permissions</TableColumn>

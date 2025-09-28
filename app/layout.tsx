@@ -48,11 +48,11 @@ export default function RootLayout({
             <main className="px-4 py-4 flex-grow">
               {children}
             </main>
-            <footer className="w-full flex gap-2 items-center justify-center py-3">
+            {/* <footer className="w-full flex gap-2 items-center justify-center py-3">
               
                 <span className="text-default-600">Didukung oleh</span>
                 <p className="text-primary cursor-pointer">IT RS Ananda Corporate (ITAC)</p>
-            </footer>
+            </footer> */}
           </div>
         </Providers>
       </body>

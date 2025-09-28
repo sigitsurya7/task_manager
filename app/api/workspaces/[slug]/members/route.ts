@@ -44,3 +44,21 @@ export async function PATCH(req: Request, { params }: { params: { slug: string }
   return NextResponse.json({ member: updated });
 }
 
+export async function DELETE(req: Request, { params }: { params: { slug: string } }) {
+  const auth = await getAuth();
+  if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
+  const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: true } });
+  if (!ws) return NextResponse.json({ message: "not found" }, { status: 404 });
+  const me = ws.members.find((m) => m.userId === String(auth.sub));
+  if (!me || me.role !== "ADMIN") return NextResponse.json({ message: "forbidden" }, { status: 403 });
+  const { userId } = await req.json().catch(() => ({}));
+  if (!userId) return NextResponse.json({ message: "userId required" }, { status: 400 });
+  // Prevent removing last admin
+  const target = ws.members.find((m) => m.userId === userId);
+  const adminCount = ws.members.filter((m) => m.role === "ADMIN").length;
+  if (target?.role === "ADMIN" && adminCount <= 1) {
+    return NextResponse.json({ message: "cannot remove last admin" }, { status: 400 });
+  }
+  await prisma.workspaceMember.deleteMany({ where: { workspaceId: ws.id, userId } });
+  return NextResponse.json({ ok: true });
+}

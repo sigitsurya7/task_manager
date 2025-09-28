@@ -66,7 +66,7 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 const iconOptions = Object.keys(iconMap);
 
-export default function AdminSidebar() {
+export default function AdminSidebar({ variant = "default" }: { variant?: "default" | "mobile" }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -187,8 +187,11 @@ export default function AdminSidebar() {
   return (
     <aside
       className={clsx(
-        "h-full shrink-0 rounded-2xl border border-default-200 bg-content1 transition-[width,padding] flex flex-col",
-        collapsed ? "w-16 p-3" : "w-64 p-4",
+        "h-full shrink-0 flex flex-col",
+        variant === "mobile"
+          ? "w-full p-4 bg-transparent"
+          : "rounded-2xl border border-default-200 bg-content1 transition-[width,padding]",
+        variant === "mobile" ? "" : collapsed ? "w-16 p-3" : "w-64 p-4",
       )}
     >
       <div className="flex items-center gap-3 px-1 py-1">
@@ -207,22 +210,24 @@ export default function AdminSidebar() {
             </div>
           </>
         )}
-        <div className="ml-auto flex gap-2 items-center">
-          <Button
-            isIconOnly
-            size="sm"
-            variant="light"
-            aria-label="menu"
-            onPress={() => setCollapsed((v) => !v)}
-            endContent={collapsed ? <FiChevronRight /> : <FiChevronLeft />}
-          >
-          </Button>
-        </div>
+        {variant !== "mobile" && (
+          <div className="ml-auto flex gap-2 items-center">
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              aria-label="menu"
+              onPress={() => setCollapsed((v) => !v)}
+              endContent={collapsed ? <FiChevronRight /> : <FiChevronLeft />}
+            >
+            </Button>
+          </div>
+        )}
       </div>
 
       <Divider className="my-3" />
 
-      <div className="space-y-5">
+      <div className={clsx("space-y-5", variant === "mobile" && "pr-1")}> 
         <NavList title="Menu" items={menuItems} buttons={false} />
         <NavList title="Workspaces" items={workspaces} buttons={isAnyAdmin} />
         {isAnyAdmin && (

@@ -13,7 +13,7 @@ import { Progress } from "@heroui/progress";
 import { Input, Textarea } from "@heroui/input";
 import { Checkbox } from "@heroui/checkbox";
 import { Modal, ModalContent, ModalHeader } from "@heroui/modal";
-import { FiFile, FiList, FiMenu, FiPlus, FiTable, FiTrash2 } from "react-icons/fi";
+import { FiFile, FiList, FiMenu, FiPlus, FiSave, FiTable, FiTrash2 } from "react-icons/fi";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
 import { RiFileExcel2Fill, RiFilePdf2Fill } from "react-icons/ri";
 import {
@@ -262,12 +262,15 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
   const [pendingDisplay, setPendingDisplay] = useState("");
   const [memberModal, setMemberModal] = useState(false);
   const [labelModal, setLabelModal] = useState(false);
+  const [showCreateLabel, setShowCreateLabel] = useState(false);
   const [dateModal, setDateModal] = useState(false);
   const [memberQuery, setMemberQuery] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
   const [labelQuery, setLabelQuery] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   const [allLabels, setAllLabels] = useState<{ id: string; name: string; color: string; selected?: boolean }[]>([]);
+  const selectedLabels = useMemo(() => allLabels.filter((l) => l.selected), [allLabels]);
+  const [assigneesLocal, setAssigneesLocal] = useState<{ id: string; name: string | null; username: string }[]>([]);
   const [confirm, setConfirm] = useState<{ open: boolean; title: string; message?: string; onConfirm: null | (() => void | Promise<void>) }>({ open: false, title: "", message: "", onConfirm: null });
   const [startEnabled, setStartEnabled] = useState(false);
   const [startDate, setStartDate] = useState<string>("");
@@ -281,6 +284,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     setStartDate(task.startDate ? new Date(task.startDate).toISOString().slice(0, 16) : "");
     setTitleEdit(task.title || "");
     setSelectedMemberIds(new Set((task.assignees ?? []).map((a)=>a.id)));
+    setAssigneesLocal([...(task.assignees ?? [])]);
 
     let alive = true;
 
@@ -358,6 +362,13 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
 
     return () => { alive = false; };
   }, [task, slug]);
+
+  // Control initial state of create-label UI based on whether labels exist
+  useEffect(() => {
+    if (!labelModal) return;
+    if (allLabels.length === 0) setShowCreateLabel(true);
+    else setShowCreateLabel(false);
+  }, [labelModal, allLabels.length]);
 
   // removed duplicate comments fetch effect (handled in main effect progressively)
 
@@ -578,7 +589,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
           <div>
             <p className="text-tiny text-default-500">Anggota</p>
             <div className="mt-2 flex items-center gap-2 flex-wrap">
-              {(task.assignees ?? []).map((m) => (
+              {assigneesLocal.map((m) => (
                 <Avatar key={m.id} name={m.name ?? m.username} size="sm" className="ring-2 ring-background" />
               ))}
               {!isViewer && (
@@ -590,7 +601,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
             <p className="text-tiny text-default-500">Label</p>
             <div className="mt-2 flex items-center gap-2">
               <div className="flex -space-x-2">
-                {(task.tags ?? []).slice(0,3).map((l) => (
+                {selectedLabels.slice(0,3).map((l) => (
                   <span key={l.id} className="inline-flex items-center rounded-full bg-primary text-white dark:text-default-700 px-2 py-0.5 text-tiny">
                     {l.name}
                   </span>
@@ -628,7 +639,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                       setChecklists((arr)=>arr.filter((x)=>x.id!==g.id));
                     }
                   });
-                }}>Delete</Button>}
+                }}>Hapus</Button>}
               </div>
               <div className="mt-2">
                 <Progress aria-label="progress" value={percent} className="max-w-full" />
@@ -681,7 +692,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                             setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.filter(it=>it.id!==c.id)}:gr));
                           }
                         });
-                      }}>Delete</Button>
+                      }}>Hapus</Button>
                     )}
                   </label>
                 ))}
@@ -755,11 +766,26 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
             <div className="flex justify-end gap-2 mt-3">
               <Button variant="light" onPress={()=>setMemberModal(false)}>Tutup</Button>
               <Button color="primary" onPress={async ()=>{
+                const currentIds = new Set((task.assignees||[]).map(a=>a.id));
+                // Add newly selected
                 for (const id of Array.from(selectedMemberIds)) {
-                  if (!(task.assignees||[]).some(a=>a.id===id)) {
+                  if (!currentIds.has(id)) {
                     await fetch(`/api/tasks/${task.id}/assignees`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId:id })});
                   }
                 }
+                // Remove unchecked
+                for (const id of Array.from(currentIds)) {
+                  if (!selectedMemberIds.has(id)) {
+                    await fetch(`/api/tasks/${task.id}/assignees`, { method:'DELETE', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId:id })});
+                  }
+                }
+                // Update local assignees for immediate UI feedback
+                const nextIds = Array.from(selectedMemberIds);
+                const nextAssignees = nextIds
+                  .map((id)=> members.find((m)=>m.id===id))
+                  .filter(Boolean)
+                  .map((m)=> ({ id: m!.id, name: m!.name, username: m!.username }));
+                setAssigneesLocal(nextAssignees as any);
                 setMemberModal(false);
                 onChanged();
               }}>Terapkan</Button>
@@ -836,7 +862,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
       </ModalContent>
     </Modal>
 
-    {/* Labels Modal (no color) */}
+    {/* Labels Modal with improved UX */}
     <Modal isOpen={labelModal} onOpenChange={setLabelModal}>
       <ModalContent>
         {() => (
@@ -863,12 +889,35 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                   </div>
                 ))}
             </div>
-            <div className="grid gap-2">
-              <Input label="Label name" value={newLabelName} onValueChange={setNewLabelName} variant="bordered" />
-              <div className="flex justify-end gap-2 mt-2">
-                <Button variant="light" onPress={()=>setLabelModal(false)}>Close</Button>
-                <Button color="primary" onPress={async ()=>{ if(!newLabelName.trim()) return; await fetch(`/api/tasks/${task.id}/labels`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: newLabelName.trim() }) }); setNewLabelName(""); try{ const r=await fetch(`/api/tasks/${task.id}/labels`, { credentials:'include' }); const d=await r.json(); setAllLabels(d.labels||[]);}catch{} onChanged(); }}>Add</Button>
+            {/* Create new label UX */}
+            {(!isViewer) && (
+              <div className="mt-2">
+                {!showCreateLabel && allLabels.length > 0 ? (
+                  <Button size="sm" variant="bordered" onPress={()=>setShowCreateLabel(true)}>Tambah label baru</Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Input aria-label="Nama label baru" placeholder="Nama label baru" value={newLabelName} onValueChange={setNewLabelName} variant="bordered" className="flex-1" />
+                    <Button isIconOnly color="primary" aria-label="Simpan label" onPress={async ()=>{
+                      const name = newLabelName.trim();
+                      if(!name) return;
+                      try {
+                        await fetch(`/api/tasks/${task.id}/labels`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+                        setNewLabelName("");
+                        try { const r = await fetch(`/api/tasks/${task.id}/labels`, { credentials:'include' }); const d = await r.json(); setAllLabels(d.labels||[]); } catch {}
+                        onChanged();
+                        if (allLabels.length > 0) setShowCreateLabel(false);
+                      } catch {}
+                    }}>
+                      <FiSave />
+                    </Button>
+                  </div>
+                )}
               </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="light" onPress={()=>setLabelModal(false)}>Tutup</Button>
+              <Button color="primary" onPress={async ()=>{ try{ const r=await fetch(`/api/tasks/${task.id}/labels`, { credentials:'include' }); const d=await r.json(); setAllLabels(d.labels||[]);}catch{} onChanged(); setLabelModal(false); }}>Simpan</Button>
             </div>
           </div>
         )}
@@ -1204,7 +1253,7 @@ export default function WorkspaceBoardPage() {
       ) : viewMode === 'table' ? (
         <div className="flex flex-col gap-2 min-h-0 overflow-auto">
           <Input size="sm" className="w-56" variant="bordered" placeholder="Cari tugas tabel..." value={tableQuery} onValueChange={setTableQuery} />
-          <Table aria-label="Tugas di workspace" removeWrapper>
+          <Table aria-label="Tugas di workspace" removeWrapper isStriped>
             <TableHeader>
               <TableColumn>Tugas</TableColumn>
               <TableColumn>

@@ -57,7 +57,7 @@ export default function MyTasksPage() {
           </select>
         </div>
       </div>
-      <Table aria-label="Tugas saya" removeWrapper>
+      <Table aria-label="Tugas saya">
         <TableHeader>
           <TableColumn>Tugas</TableColumn>
           <TableColumn>Workspace</TableColumn>

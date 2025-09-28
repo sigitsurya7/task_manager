@@ -70,6 +70,7 @@ export default function UsersPage() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const formRef = useRef<HTMLDivElement | null>(null);
   const [role, setRole] = useState<"ADMIN" | "MEMBER" | "VIEWER" | "">("");
+  const [confirm, setConfirm] = useState<{ open: boolean; username: string; userId: string } | null>(null);
 
   const resetForm = () => {
     setEditId(null);
@@ -142,7 +143,7 @@ export default function UsersPage() {
           </div>
         </CardHeader>
         <CardBody>
-          <Table aria-label="Users table">
+          <Table aria-label="Users table" removeWrapper>
             <TableHeader>
               <TableColumn>Nama</TableColumn>
               <TableColumn>Email</TableColumn>
@@ -160,33 +161,43 @@ export default function UsersPage() {
                     <Select
                       aria-label={`Role ${u.username}`}
                       size="sm"
-                      selectedKeys={(members.find((m) => m.user.id === u.id)?.role ? [members.find((m) => m.user.id === u.id)!.role] : [])}
+                      selectedKeys={[
+                        members.find((m) => m.user.id === u.id)?.role ?? ("NONE" as any),
+                      ]}
                       onSelectionChange={async (k) => {
-                        const newRole = Array.from(k)[0] as "ADMIN" | "MEMBER" | "VIEWER";
+                        const newKey = Array.from(k)[0] as "ADMIN" | "MEMBER" | "VIEWER" | "NONE";
                         if (!selectedSlug) return;
+                        if (newKey === "NONE") {
+                          // Use modal confirmation instead of alert
+                          setConfirm({ open: true, username: u.username, userId: u.id });
+                          return;
+                        }
                         try {
                           const exists = members.find((m) => m.user.id === u.id);
                           if (exists) {
-                            await api.patch(`/api/workspaces/${selectedSlug}/members`, { userId: u.id, role: newRole });
-                            setMembers((mm) => mm.map((m) => (m.user.id === u.id ? { ...m, role: newRole } : m)));
+                            await api.patch(`/api/workspaces/${selectedSlug}/members`, { userId: u.id, role: newKey });
+                            setMembers((mm) => mm.map((m) => (m.user.id === u.id ? { ...m, role: newKey } : m)));
                           } else {
-                            await api.post(`/api/workspaces/${selectedSlug}/members`, { usernameOrEmail: u.username, role: newRole });
-                            setMembers((mm) => [...mm, { id: crypto.randomUUID(), role: newRole, user: { id: u.id } }]);
+                            await api.post(`/api/workspaces/${selectedSlug}/members`, { usernameOrEmail: u.username, role: newKey });
+                            setMembers((mm) => [...mm, { id: crypto.randomUUID(), role: newKey, user: { id: u.id } }]);
                           }
                           toast.success("Role diperbarui");
                         } catch (e: any) {
                           toast.error(e?.response?.data?.message ?? "Gagal memperbarui role");
                         }
                       }}
-                      className="min-w-[140px]"
+                      className="min-w-[160px]"
                     >
+                      <SelectItem key="NONE">— Tidak ada —</SelectItem>
                       <SelectItem key="ADMIN">ADMIN</SelectItem>
                       <SelectItem key="MEMBER">MEMBER</SelectItem>
                       <SelectItem key="VIEWER">VIEWER</SelectItem>
                     </Select>
                   </TableCell>
                   <TableCell>
-                    <Button size="sm" variant="flat" onPress={() => openEdit(u)}>Edit</Button>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="flat" onPress={() => openEdit(u)}>Edit</Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -251,6 +262,34 @@ export default function UsersPage() {
                   <Button variant="light" onPress={() => { setOpen(false); resetForm(); }}>Batal</Button>
                   <Button color="primary" onPress={onSubmit}>{editId ? "Simpan" : "Tambah"}</Button>
                 </div>
+              </div>
+            </div>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Confirm remove role modal */}
+      <Modal isOpen={!!confirm?.open} onOpenChange={(o) => { if (!o) setConfirm(null); }}>
+        <ModalContent>
+          {() => (
+            <div className="p-6">
+              <ModalHeader className="p-0 mb-2">Hapus Role</ModalHeader>
+              <p className="text-small text-default-600">
+                Apakah Anda yakin ingin menghapus role <span className="font-medium">{confirm?.username}</span> dari workspace ini?
+              </p>
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="light" onPress={() => setConfirm(null)}>Batal</Button>
+                <Button color="danger" onPress={async () => {
+                  if (!confirm || !selectedSlug) return;
+                  try {
+                    await api.delete(`/api/workspaces/${selectedSlug}/members`, { data: { userId: confirm.userId } });
+                    setMembers((mm) => mm.filter((m) => m.user.id !== confirm.userId));
+                    setConfirm(null);
+                    toast.success("Role dihapus dari workspace");
+                  } catch (e: any) {
+                    toast.error(e?.response?.data?.message ?? "Gagal menghapus role");
+                  }
+                }}>Hapus</Button>
               </div>
             </div>
           )}
