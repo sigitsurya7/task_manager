@@ -4,4 +4,3 @@ export const api = Axios.create({
   baseURL: "",
   withCredentials: true,
 });
-
