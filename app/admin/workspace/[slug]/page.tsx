@@ -1172,6 +1172,33 @@ export default function WorkspaceBoardPage() {
   const [selected, setSelected] = useState<{ task: Task; column: { title: string; accent?: string | null } } | null>(null);
   const openTask = (task: Task, col: ColumnData) => { setSelected({ task, column: { title: col.title, accent: col.accent ?? null } }); setOpen(true); };
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [addMembersOpen, setAddMembersOpen] = useState(false);
+  const [userQuery, setUserQuery] = useState("");
+  const [availableUsers, setAvailableUsers] = useState<{ id: string; username: string; name: string | null; role?: string }[]>([]);
+  const [currentMembers, setCurrentMembers] = useState<{ id: string; username: string; name: string | null; role: 'ADMIN'|'MEMBER'|'VIEWER' }[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [selectedRoles, setSelectedRoles] = useState<Record<string, "ADMIN"|"MEMBER"|"VIEWER">>({});
+  const loadAvailableUsers = async () => {
+    try {
+      // fetch users (first page, 100 items), then filter to user.role === 'MEMBER'
+      const res = await fetch(`/api/users?page=1&pageSize=100&q=${encodeURIComponent(userQuery)}`, { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = (data.users||[]) as any[];
+      const wsRes = await fetch(`/api/workspaces/${slug}/members`, { credentials: 'include' });
+      let memberIds = new Set<string>();
+      if (wsRes.ok) {
+        const d = await wsRes.json();
+        const cur = (d.members||[]).map((m:any)=> ({ id:m.user.id, username:m.user.username, name:m.user.name||null, role: m.role }));
+        setCurrentMembers(cur);
+        memberIds = new Set<string>(cur.map((x:any)=>x.id));
+      }
+      const filtered = list
+        .filter(u => (u.role === 'MEMBER'))
+        .filter(u => !memberIds.has(u.id));
+      setAvailableUsers(filtered.map(u=>({ id:u.id, username:u.username, name:u.name||null, role:u.role })));
+    } catch {}
+  };
 
   return (
     <div className="flex h-[calc(100dvh-64px-48px)] min-h-0 flex-col overflow-hidden">
@@ -1198,7 +1225,10 @@ export default function WorkspaceBoardPage() {
         </div>
         <div className="hidden sm:flex items-center gap-2">
           {workspaceRole === "ADMIN" && (
-            <Button color="danger" variant="bordered" endContent={<FiTrash2 />} onPress={() => setConfirmOpen(true)}>Hapus</Button>
+            <div className="flex gap-2 items-center">
+              <Button color="primary" variant="bordered" endContent={<FiPlus />} onPress={() => { setAddMembersOpen(true); loadAvailableUsers(); }}>Atur Member</Button>
+              <Button color="danger" variant="bordered" endContent={<FiTrash2 />} onPress={() => setConfirmOpen(true)}>Hapus</Button>
+            </div>
           )}
         </div>
       </header>
@@ -1402,6 +1432,133 @@ export default function WorkspaceBoardPage() {
           )}
         </ModalContent>
       </Modal>
+      {/* Atur Member Modal */}
+      <Modal isOpen={addMembersOpen} onOpenChange={(o)=>{ setAddMembersOpen(o); if (!o) { setSelectedUserIds(new Set()); setSelectedRoles({}); setUserQuery(""); } }}>
+        <ModalContent>
+          {() => (
+            <div className="p-6">
+              <ModalHeader className="p-0 mb-3">Atur Anggota Workspace</ModalHeader>
+              <div className="space-y-5">
+                <div>
+                  <p className="text-small text-default-500 mb-2">Anggota saat ini</p>
+                  <div className="space-y-2 max-h-64 overflow-auto no-scrollbar">
+                    {currentMembers.map((m)=> (
+                      <div key={m.id} className="flex items-center justify-between border border-default-200 rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={m.name || m.username} size="sm" />
+                          <div className="leading-tight">
+                            <p className="text-small font-medium">{m.name || m.username}</p>
+                            <p className="text-tiny text-default-500">{m.username}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 max-w-full">
+                          <Select size="sm" selectedKeys={[m.role]} onSelectionChange={async (k)=>{
+                            try {
+                              const role = Array.from(k)[0] as 'ADMIN'|'MEMBER'|'VIEWER';
+                              await fetch(`/api/workspaces/${slug}/members`, { method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: m.id, role }) });
+                              setCurrentMembers(list=> list.map(x=> x.id===m.id ? { ...x, role } : x));
+                              toast.success('Role diperbarui');
+                            } catch {
+                              toast.error('Gagal memperbarui role');
+                            }
+                          }}>
+                            <SelectItem key="ADMIN">ADMIN</SelectItem>
+                            <SelectItem key="MEMBER">MEMBER</SelectItem>
+                            <SelectItem key="VIEWER">VIEWER</SelectItem>
+                          </Select>
+                          <Button size="sm" color="danger" variant="flat" onPress={async ()=>{
+                            try {
+                              await fetch(`/api/workspaces/${slug}/members`, { method:'DELETE', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: m.id }) });
+                              const taskIds: string[] = [];
+                              try { (columns||[]).forEach(c=> (c.tasks||[]).forEach(t=> { if ((t.assignees||[]).some(a=>a.id===m.id)) taskIds.push(t.id); })); } catch {}
+                              for (const tid of taskIds) {
+                                await fetch(`/api/tasks/${tid}/assignees`, { method:'DELETE', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: m.id }) });
+                              }
+                              setCurrentMembers(list=> list.filter(x=> x.id!==m.id));
+                              toast.success('Anggota dihapus');
+                            } catch {
+                              toast.error('Gagal menghapus anggota');
+                            }
+                          }}>Hapus</Button>
+                        </div>
+                      </div>
+                    ))}
+                    {(!currentMembers || currentMembers.length===0) && (
+                      <p className="text-small text-default-500">Belum ada anggota.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <Input placeholder="Cari user (username/nama)" value={userQuery} onValueChange={(v)=>{ setUserQuery(v); }} className="max-w-sm" />
+                  <Button variant="flat" onPress={loadAvailableUsers}>Cari</Button>
+                </div>
+                <div className="max-h-80 overflow-auto no-scrollbar space-y-2">
+                  {availableUsers
+                    .filter(u=> u.username.toLowerCase().includes(userQuery.toLowerCase()) || (u.name||'').toLowerCase().includes(userQuery.toLowerCase()))
+                    .map((u)=> {
+                      const checked = selectedUserIds.has(u.id);
+                      return (
+                        <div key={u.id} className="flex items-center justify-between border border-default-200 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-3">
+                            <Avatar name={u.name || u.username} size="sm" />
+                            <div className="leading-tight">
+                              <p className="text-small font-medium">{u.name || u.username}</p>
+                              <p className="text-tiny text-default-500">{u.username}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {checked && (
+                              <Select aria-label={`Role untuk ${u.username}`} size="sm" selectedKeys={[selectedRoles[u.id] || 'MEMBER']} onSelectionChange={(k)=>{
+                                const v = Array.from(k)[0] as 'ADMIN'|'MEMBER'|'VIEWER';
+                                setSelectedRoles(prev=> ({ ...prev, [u.id]: v }));
+                              }} className="min-w-[150px]">
+                                <SelectItem key="ADMIN">ADMIN</SelectItem>
+                                <SelectItem key="MEMBER">MEMBER</SelectItem>
+                                <SelectItem key="VIEWER">VIEWER</SelectItem>
+                              </Select>
+                            )}
+                            <Checkbox isSelected={checked} onValueChange={(val)=>{
+                              setSelectedUserIds(prev=>{ const s=new Set(prev); if(val) { s.add(u.id); if(!selectedRoles[u.id]) setSelectedRoles(r=>({...r,[u.id]:'MEMBER'})); } else { s.delete(u.id); setSelectedRoles(r=>{ const x={...r}; delete x[u.id]; return x; }); } return s; });
+                            }}>{checked ? 'Dipilih' : 'Pilih'}</Checkbox>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {(!availableUsers || availableUsers.length === 0) && (
+                    <p className="text-small text-default-500">Tidak ada user yang dapat ditambahkan.</p>
+                  )}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="light" onPress={()=>{ setAddMembersOpen(false); }}>Tutup</Button>
+                  <Button color="primary" onPress={async ()=>{
+                    try {
+                      const ids = Array.from(selectedUserIds);
+                      if (ids.length) {
+                        await Promise.all(ids.map(async (id)=>{
+                          const u = availableUsers.find(x=>x.id===id);
+                          if (!u) return;
+                          const role = selectedRoles[id] || 'MEMBER';
+                          await fetch(`/api/workspaces/${slug}/members`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ usernameOrEmail: u.username, role }) });
+                        }));
+                      }
+                      toast.success(ids.length? 'Anggota ditambahkan' : 'Selesai');
+                      await loadAvailableUsers();
+                      load(slug)
+                      setAddMembersOpen(false);
+                      setSelectedUserIds(new Set());
+                      setSelectedRoles({});
+                      try { useWorkspaces.getState().fetch(); } catch {}
+                    } catch {
+                      toast.error('Gagal menyimpan perubahan');
+                    }
+                  }}>Simpan</Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </ModalContent>
+      </Modal>
+
     </div>
   );
 }

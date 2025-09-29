@@ -8,10 +8,11 @@ async function main() {
   const username = "lysca";
   const email = "lysca@example.com";
   const password = "juni1996!";
+  const role = "ADMIN";
 
   const existing = await prisma.user.findFirst({ where: { OR: [{ username }, { email }] } });
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = existing ?? (await prisma.user.create({ data: { username, email, passwordHash, name: "Admin" } }));
+  const user = existing ?? (await prisma.user.create({ data: { username, email, passwordHash, name: "lysca", role } }));
   if (!existing) console.log("Created admin user 'lysca'");
 
   const ws = await prisma.workspace.upsert({

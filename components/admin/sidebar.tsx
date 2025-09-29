@@ -8,7 +8,7 @@ import { Divider } from "@heroui/divider";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { ThemeSwitch } from "../theme-switch";
-import { FiLayout, FiUsers, FiCheckSquare, FiZap, FiChevronLeft, FiChevronRight, FiPlus, FiSettings, FiShield, FiUserCheck, FiSmartphone, FiShoppingCart, FiTrendingUp, FiActivity, FiAirplay, FiAperture, FiArchive, FiBarChart2, FiBook, FiBriefcase, FiCalendar, FiCamera, FiCode, FiDatabase, FiFeather, FiFileText, FiFolder, FiGlobe, FiGrid, FiHeart, FiHome, FiInbox, FiLayers, FiMail, FiMap, FiMonitor, FiPackage, FiPaperclip, FiPieChart, FiServer, FiTarget, FiTool } from "react-icons/fi";
+import { FiLayout, FiUsers, FiCheckSquare, FiZap, FiChevronLeft, FiChevronRight, FiPlus, FiSettings, FiShield, FiUserCheck, FiSmartphone, FiShoppingCart, FiTrendingUp, FiActivity, FiAirplay, FiAperture, FiArchive, FiBarChart2, FiBook, FiBriefcase, FiCalendar, FiCamera, FiCode, FiDatabase, FiFeather, FiFileText, FiFolder, FiGlobe, FiGrid, FiHeart, FiHome, FiInbox, FiLayers, FiMail, FiMap, FiMonitor, FiPackage, FiPaperclip, FiPieChart, FiServer, FiTarget, FiTool, FiLogOut } from "react-icons/fi";
 import { Logo } from "../icons";
 import { Modal, ModalContent, ModalHeader } from "@heroui/modal";
 import { Input } from "@heroui/input";
@@ -72,26 +72,34 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
 
   const { items, fetch } = useWorkspaces();
   useEffect(() => { fetch(); }, [fetch]);
-  const viewerOnly = useMemo(() => items.length > 0 && items.every((w) => w.role === "VIEWER"), [items]);
+  
   const menuItems = baseMenu;
   const workspaces = useMemo<Item[]>(() =>
     items.map((w) => ({ label: w.name, href: `/admin/workspace/${w.slug}`, icon: iconMap[w.iconKey || "FiZap"] })),
   [items]);
 
-  const isAnyAdmin = useMemo(() => items.some((w) => w.role === "ADMIN"), [items]);
-
   // current user + role summary
-  const [me, setMe] = useState<{ username: string; name?: string } | null>(null);
+  const [me, setMe] = useState<{ username: string; name?: string; role?: string } | null>(null);
+  
+  // NOTE: role exclusively comes from user table (me.role)
   const roleBadge = useMemo(() => {
-    const priority: Record<string, number> = { VIEWER: 1, MEMBER: 2, ADMIN: 3 };
-    const top = [...items].sort((a, b) => (priority[b.role] || 0) - (priority[a.role] || 0))[0]?.role || "";
-    return top ? top.charAt(0) + top.slice(1).toLowerCase() : "";
-  }, [items]);
+    const r = me?.role || "";
+    return r ? r.charAt(0) + r.slice(1).toLowerCase() : "";
+  }, [me?.role]);
   useEffect(() => {
     (async () => {
       try { const res = await api.get('/api/auth/me'); setMe(res.data.user ?? null); } catch {}
     })();
   }, []);
+
+  // derive admin capability: user-level ADMIN or any workspace ADMIN
+  const canAdmin = useMemo(() => me?.role === "ADMIN", [me?.role]);
+
+  const adminNavItems = useMemo(() => ([
+    { label: "ACL", href: "/admin/settings/acl", icon: <FiShield /> },
+    { label: "Roles", href: "/admin/settings/roles", icon: <FiSettings /> },
+    { label: "User Management", href: "/admin/settings/users", icon: <FiUserCheck /> },
+  ]), []);
 
   // Add Workspace Modal state
   const [open, setOpen] = useState(false);
@@ -153,7 +161,6 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
           <p className="px-2 text-xs uppercase tracking-wide text-default-400">
             {title}
           </p>
-
           {buttons && (
               <Button color="primary" size="sm" startContent={<FiPlus />} onPress={() => setOpen(true)}>
                 Add
@@ -229,17 +236,9 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
 
       <div className={clsx("space-y-5", variant === "mobile" && "pr-1")}> 
         <NavList title="Menu" items={menuItems} buttons={false} />
-        <NavList title="Workspaces" items={workspaces} buttons={isAnyAdmin} />
-        {isAnyAdmin && (
-          <NavList
-            title="Admin"
-            buttons={false}
-            items={[
-              { label: "ACL", href: "/admin/settings/acl", icon: <FiShield /> },
-              { label: "Roles", href: "/admin/settings/roles", icon: <FiSettings /> },
-              { label: "User Management", href: "/admin/settings/users", icon: <FiUserCheck /> },
-            ]}
-          />
+        <NavList title="Workspaces" items={workspaces} buttons={canAdmin} />
+        {canAdmin && (
+          <NavList title="Admin" buttons={false} items={adminNavItems} />
         )}
       </div>
 
@@ -261,16 +260,18 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
           </PopoverTrigger>
           <PopoverContent className="">
             <div className="flex flex-col gap-1">
-              <button
-                className="text-left rounded-md px-2 py-1 hover:bg-default-100"
-                onClick={() => (window.location.href = "/admin/settings/account")}
+              <Button
+                variant="light"
+                onPress={() => (window.location.href = "/admin/settings/account")}
+                startContent={<FiUsers />}
               >
                 Pengaturan Akun
-              </button>
+              </Button>
               <Divider />
-              <button
-                className="text-left rounded-md px-2 py-1 text-danger hover:bg-danger-100/40"
-                onClick={async () => {
+              <Button
+                variant="light"
+                color="danger"
+                onPress={async () => {
                   await toast.promise(api.post('/api/auth/logout'), {
                     loading: 'Logging out...',
                     success: 'Logged out',
@@ -278,9 +279,10 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
                   });
                   window.location.href = "/login";
                 }}
+                startContent={<FiLogOut />}
               >
                 Keluar
-              </button>
+              </Button>
             </div>
           </PopoverContent>
         </Popover>
