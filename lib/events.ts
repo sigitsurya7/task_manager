@@ -5,7 +5,8 @@ export type BoardEvent =
   | { type: "task.updated"; workspaceId: string; task: { id: string; title?: string; progress?: number; dueDate?: string | null } }
   | { type: "task.moved"; workspaceId: string; taskId: string; fromColumnId: string; toColumnId: string; position: string }
   | { type: "comment.created"; workspaceId: string; taskId: string; commentId: string }
-  | { type: "task.deleted"; workspaceId: string; taskId: string };
+  | { type: "task.deleted"; workspaceId: string; taskId: string }
+  | { type: "workspace.members.changed"; workspaceId: string };
 
 export const emitter = new EventEmitter();
 

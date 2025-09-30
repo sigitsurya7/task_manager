@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
+import { publish } from "@/lib/events";
 
 export async function POST(req: Request, context: any) {
   const { params } = context as { params: { id: string } };
@@ -24,6 +25,7 @@ export async function POST(req: Request, context: any) {
     create: { taskId: task.id, labelId: lblId! },
     update: {},
   });
+  publish({ type: "task.updated", workspaceId: wsId, task: { id: task.id } as any });
   return NextResponse.json({ ok: true });
 }
 
@@ -55,5 +57,6 @@ export async function DELETE(req: Request, context: any) {
   const membership = await prisma.workspaceMember.findFirst({ where: { workspaceId: wsId, userId: String(auth.sub) } });
   if (!membership || membership.role === "VIEWER") return NextResponse.json({ message: "forbidden" }, { status: 403 });
   await prisma.taskLabel.deleteMany({ where: { taskId: task.id, labelId } });
+  publish({ type: "task.updated", workspaceId: wsId, task: { id: task.id } as any });
   return NextResponse.json({ ok: true });
 }

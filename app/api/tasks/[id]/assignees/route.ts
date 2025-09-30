@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
+import { publish } from "@/lib/events";
 
 export async function POST(req: Request, context: any) {
   const { params } = context as { params: { id: string } };
@@ -16,6 +17,7 @@ export async function POST(req: Request, context: any) {
   const target = ws.members.find((m) => m.userId === userId);
   if (!target) return NextResponse.json({ message: "user not in workspace" }, { status: 400 });
   await prisma.taskAssignee.upsert({ where: { taskId_userId: { taskId: params.id, userId } }, create: { taskId: params.id, userId }, update: {} });
+  publish({ type: "task.updated", workspaceId: ws.id, task: { id: task.id } as any });
   return NextResponse.json({ ok: true });
 }
 
@@ -34,5 +36,6 @@ export async function DELETE(req: Request, context: any) {
   const target = ws.members.find((m) => m.userId === userId);
   if (!target) return NextResponse.json({ message: "user not in workspace" }, { status: 400 });
   await prisma.taskAssignee.deleteMany({ where: { taskId: params.id, userId } });
+  publish({ type: "task.updated", workspaceId: ws.id, task: { id: task.id } as any });
   return NextResponse.json({ ok: true });
 }

@@ -101,12 +101,32 @@ export const useBoard = create<State>((set, get) => ({
           });
         }
         if (evt.type === "task.updated" && evt.task) {
-          set((s) => ({
-            columns: s.columns.map((c) => ({
-              ...c,
-              tasks: c.tasks.map((t) => (t.id === evt.task.id ? { ...t, title: evt.task.title ?? t.title, progress: typeof evt.task.progress === "number" ? evt.task.progress : t.progress, dueDate: typeof evt.task.dueDate !== "undefined" ? evt.task.dueDate : t.dueDate } : t)),
-            })),
-          }));
+          // ignore nudge events
+          if (typeof evt.task.id === 'string' && evt.task.id.startsWith('__')) return;
+          // fetch fresh task details to update assignees/labels/dates accurately
+          (async () => {
+            try {
+              const { data } = await api.get(`/api/tasks/${evt.task.id}`);
+              set((s) => ({
+                columns: s.columns.map((c) => ({
+                  ...c,
+                  tasks: c.tasks.map((t) =>
+                    t.id === data.id
+                      ? { ...t, title: data.title ?? t.title, progress: typeof data.progress === 'number' ? data.progress : t.progress, dueDate: typeof data.dueDate !== 'undefined' ? data.dueDate : t.dueDate, assignees: data.assignees ?? t.assignees }
+                      : t,
+                  ),
+                })),
+              }));
+            } catch {
+              // fallback: apply any partial payload updates
+              set((s) => ({
+                columns: s.columns.map((c) => ({
+                  ...c,
+                  tasks: c.tasks.map((t) => (t.id === evt.task.id ? { ...t, title: evt.task.title ?? t.title, progress: typeof evt.task.progress === 'number' ? evt.task.progress : t.progress, dueDate: typeof evt.task.dueDate !== 'undefined' ? evt.task.dueDate : t.dueDate } : t)),
+                })),
+              }));
+            }
+          })();
         }
         if (evt.type === "task.moved") {
           set((s) => {
@@ -129,6 +149,22 @@ export const useBoard = create<State>((set, get) => ({
             cols[toIdx] = { ...toCol, tasks: newTasks };
             return { columns: cols } as any;
           });
+        }
+        if (evt.type === "workspace.members.changed") {
+          const slug = get().workspaceSlug;
+          if (!slug) return;
+          (async () => {
+            try {
+              const [meRes, memRes] = await Promise.all([
+                api.get(`/api/auth/me`),
+                api.get(`/api/workspaces/${slug}/members`),
+              ]);
+              const myId = meRes.data?.user?.id;
+              const members = memRes.data?.members || [];
+              const me = members.find((m: any) => m.user?.id === myId);
+              if (me?.role) set({ workspaceRole: me.role });
+            } catch {}
+          })();
         }
         if (evt.type === "task.deleted" && evt.taskId) {
           set((s) => ({

@@ -51,6 +51,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, ChartTitle, Tooltip, Le
 
 type Task = {
   id: string;
+  is_complete?: boolean;
   title: string;
   progress?: number;
   dueDate?: string | null;
@@ -73,7 +74,7 @@ function formatDaysLeft(dueDate?: string | null) {
 // simple runtime cache for workspace members per slug
 const __membersCache: Map<string, { id: string; email: string; username: string; name: string | null; role: string }[]> = new Map();
 
-function TaskCard({ id, title, progress, tags, assignees, dueDate, onOpen }: Task & { onOpen: () => void }) {
+function TaskCard({ id, title, progress, tags, assignees, dueDate, is_complete, onOpen }: Task & { onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -113,7 +114,7 @@ function TaskCard({ id, title, progress, tags, assignees, dueDate, onOpen }: Tas
                   <Avatar key={a.id} size="sm" name={a.name ?? a.username} className="ring-2 ring-background" />
                 ))}
               </div>
-              {formatDaysLeft(dueDate) ? (
+              { is_complete ? <span className="text-tiny text-default-500">Selesai</span> :formatDaysLeft(dueDate) ? (
                 <span className="text-tiny text-default-500">{formatDaysLeft(dueDate)}</span>
               ) : <span />}
           </div>
@@ -194,8 +195,8 @@ function CommentsSection({ me, isViewer, comment, setComment, comments, onSubmit
     <div>
       <ModalHeader className="p-0">Komentar dan aktivitas</ModalHeader>
       <div className="mt-3 space-y-3">
-        <div className="flex gap-2 items-center">
-          <Input
+        <div className="flex flex-col">
+          <Textarea
             placeholder="Tulis komentar..."
             value={comment}
             onChange={(e)=>setComment(e.target.value)}
@@ -203,7 +204,9 @@ function CommentsSection({ me, isViewer, comment, setComment, comments, onSubmit
             aria-label="Tulis komentar"
           />
           {!isViewer && (
-            <Button size="sm" color="primary" onPress={onSubmit}>Simpan</Button>
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" className="w-max" color="primary" onPress={onSubmit}>Simpan</Button>
+            </div>
           )}
         </div>
         <div className="overflow-y-auto max-h-96 no-scrollbar flex flex-col gap-2">
@@ -361,6 +364,57 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     })();
 
     return () => { alive = false; };
+  }, [task, slug]);
+
+  // Realtime: listen SSE and refresh TaskDetail sections when related events arrive
+  useEffect(() => {
+    if (!task) return;
+    let es: EventSource | null = null;
+    const refresh = async () => {
+      try {
+        const [tRes, cRes, aRes, lRes] = await Promise.all([
+          fetch(`/api/tasks/${task.id}`, { credentials: 'include' }),
+          fetch(`/api/comments?taskId=${task.id}`, { credentials: 'include' }),
+          fetch(`/api/tasks/${task.id}/attachments`, { credentials: 'include' }),
+          fetch(`/api/tasks/${task.id}/labels`, { credentials: 'include' }),
+        ]);
+        if (tRes.ok) { const d = await tRes.json(); setDesc(d.description || ""); setAssigneesLocal(d.assignees || []); setSelectedMemberIds(new Set((d.assignees||[]).map((a:any)=>a.id))); }
+        if (cRes.ok) { const d = await cRes.json(); setComments(d.comments || []); }
+        if (aRes.ok) { const d = await aRes.json(); setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'}))); }
+        if (lRes.ok) { const d = await lRes.json(); setAllLabels(d.labels||[]); }
+      } catch {}
+    };
+    try {
+      es = new EventSource(`/api/events?workspace=${encodeURIComponent(slug)}`, { withCredentials: true } as any);
+      es.onmessage = (msg) => {
+        try {
+          const evt = JSON.parse(msg.data);
+          if ((evt.type === 'task.updated' && evt.task && evt.task.id === task.id) ||
+              (evt.type === 'comment.created' && evt.taskId === task.id)) {
+            refresh();
+          }
+          if (evt.type === 'workspace.members.changed') {
+            // refresh members list used by TaskDetail dialogs
+            (async () => {
+              try {
+                const res = await fetch(`/api/workspaces/${slug}/members`, { credentials: 'include' });
+                if (res.ok) {
+                  const data = await res.json();
+                  const mem = (data.members||[]).map((m:any)=> ({ ...m.user, role: m.role }));
+                  try { __membersCache.set(slug, mem); } catch {}
+                  setMembers(mem);
+                }
+              } catch {}
+            })();
+          }
+          if (evt.type === 'task.deleted' && evt.taskId === task.id) {
+            // task removed by others; close the modal gracefully
+            onClose();
+          }
+        } catch {}
+      };
+    } catch {}
+    return () => { try { es?.close(); } catch {} };
   }, [task, slug]);
 
   // Control initial state of create-label UI based on whether labels exist
@@ -983,7 +1037,7 @@ function Column({ data, onAdd, onOpen }: { data: ColumnData; onAdd: (colId: stri
       <SortableContext items={data.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className="mt-3 flex-1 space-y-3 overflow-y-auto pr-1 no-scrollbar">
           {data.tasks.map((t) => (
-            <TaskCard key={t.id} {...t} onOpen={() => onOpen(t, data)} />
+            <TaskCard key={t.id} {...t} is_complete={data.title === 'Complete'} onOpen={() => onOpen(t, data)} />
           ))}
         </div>
       </SortableContext>
@@ -1194,8 +1248,9 @@ export default function WorkspaceBoardPage() {
         memberIds = new Set<string>(cur.map((x:any)=>x.id));
       }
       const filtered = list
-        .filter(u => (u.role === 'MEMBER'))
-        .filter(u => !memberIds.has(u.id));
+        // Exclude user-level ADMIN entirely; allow others (including legacy null) to appear
+        .filter((u:any) => u.role !== 'ADMIN')
+        .filter((u:any) => !memberIds.has(u.id));
       setAvailableUsers(filtered.map(u=>({ id:u.id, username:u.username, name:u.name||null, role:u.role })));
     } catch {}
   };
@@ -1402,7 +1457,7 @@ export default function WorkspaceBoardPage() {
               slug={slug}
               role={workspaceRole}
               onClose={() => setOpen(false)}
-              onChanged={() => load(slug)}
+              onChanged={() => { /* realtime via SSE; no hard reload */ }}
             />
           )}
         </ModalContent>
@@ -1433,7 +1488,7 @@ export default function WorkspaceBoardPage() {
         </ModalContent>
       </Modal>
       {/* Atur Member Modal */}
-      <Modal isOpen={addMembersOpen} onOpenChange={(o)=>{ setAddMembersOpen(o); if (!o) { setSelectedUserIds(new Set()); setSelectedRoles({}); setUserQuery(""); } }}>
+      <Modal size="xl" isOpen={addMembersOpen} onOpenChange={(o)=>{ setAddMembersOpen(o); if (!o) { setSelectedUserIds(new Set()); setSelectedRoles({}); setUserQuery(""); } }}>
         <ModalContent>
           {() => (
             <div className="p-6">
@@ -1443,7 +1498,7 @@ export default function WorkspaceBoardPage() {
                   <p className="text-small text-default-500 mb-2">Anggota saat ini</p>
                   <div className="space-y-2 max-h-64 overflow-auto no-scrollbar">
                     {currentMembers.map((m)=> (
-                      <div key={m.id} className="flex items-center justify-between border border-default-200 rounded-lg px-3 py-2">
+                      <div key={m.id} className="flex gap-8 items-center justify-between border border-default-200 rounded-lg px-3 py-2">
                         <div className="flex items-center gap-3">
                           <Avatar name={m.name || m.username} size="sm" />
                           <div className="leading-tight">
@@ -1451,13 +1506,14 @@ export default function WorkspaceBoardPage() {
                             <p className="text-tiny text-default-500">{m.username}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 max-w-full">
-                          <Select size="sm" selectedKeys={[m.role]} onSelectionChange={async (k)=>{
+                        <div className="flex items-center gap-3 w-46">
+                          <Select size="sm" className="max-w-xs" selectedKeys={[m.role]} onSelectionChange={async (k)=>{
                             try {
                               const role = Array.from(k)[0] as 'ADMIN'|'MEMBER'|'VIEWER';
                               await fetch(`/api/workspaces/${slug}/members`, { method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: m.id, role }) });
                               setCurrentMembers(list=> list.map(x=> x.id===m.id ? { ...x, role } : x));
                               toast.success('Role diperbarui');
+                              try { useBoard.getState().load(slug); } catch {}
                             } catch {
                               toast.error('Gagal memperbarui role');
                             }
@@ -1476,6 +1532,7 @@ export default function WorkspaceBoardPage() {
                               }
                               setCurrentMembers(list=> list.filter(x=> x.id!==m.id));
                               toast.success('Anggota dihapus');
+                              try { useBoard.getState().load(slug); } catch {}
                             } catch {
                               toast.error('Gagal menghapus anggota');
                             }
@@ -1548,6 +1605,7 @@ export default function WorkspaceBoardPage() {
                       setSelectedUserIds(new Set());
                       setSelectedRoles({});
                       try { useWorkspaces.getState().fetch(); } catch {}
+                      try { useBoard.getState().load(slug); } catch {}
                     } catch {
                       toast.error('Gagal menyimpan perubahan');
                     }

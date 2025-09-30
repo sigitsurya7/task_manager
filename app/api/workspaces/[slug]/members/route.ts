@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
+import { publish } from "@/lib/events";
 
 export async function GET(_req: Request, context: any) {
   const { params } = context as { params: { slug: string } };
@@ -20,7 +21,9 @@ export async function POST(req: Request, context: any) {
   const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: true } });
   if (!ws) return NextResponse.json({ message: "not found" }, { status: 404 });
   const me = ws.members.find((m) => m.userId === String(auth.sub));
-  if (!me || me.role !== "ADMIN") return NextResponse.json({ message: "forbidden" }, { status: 403 });
+  const current = await prisma.user.findUnique({ where: { id: String(auth.sub) }, select: { role: true } });
+  const allowed = (me && me.role === "ADMIN") || current?.role === "ADMIN";
+  if (!allowed) return NextResponse.json({ message: "forbidden" }, { status: 403 });
   const { usernameOrEmail, role } = await req.json().catch(() => ({}));
   if (!usernameOrEmail || !role) return NextResponse.json({ message: "usernameOrEmail and role required" }, { status: 400 });
   const user = await prisma.user.findFirst({ where: { OR: [{ username: usernameOrEmail }, { email: usernameOrEmail }] } });
@@ -30,6 +33,7 @@ export async function POST(req: Request, context: any) {
     create: { workspaceId: ws.id, userId: user.id, role },
     update: { role },
   });
+  publish({ type: "workspace.members.changed", workspaceId: ws.id });
   return NextResponse.json({ member: { id: mem.id, role: mem.role, user: { id: user.id, email: user.email, username: user.username, name: user.name } } });
 }
 
@@ -40,10 +44,13 @@ export async function PATCH(req: Request, context: any) {
   const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: true } });
   if (!ws) return NextResponse.json({ message: "not found" }, { status: 404 });
   const me = ws.members.find((m) => m.userId === String(auth.sub));
-  if (!me || me.role !== "ADMIN") return NextResponse.json({ message: "forbidden" }, { status: 403 });
+  const current = await prisma.user.findUnique({ where: { id: String(auth.sub) }, select: { role: true } });
+  const allowed = (me && me.role === "ADMIN") || current?.role === "ADMIN";
+  if (!allowed) return NextResponse.json({ message: "forbidden" }, { status: 403 });
   const { userId, role } = await req.json().catch(() => ({}));
   if (!userId || !role) return NextResponse.json({ message: "userId and role required" }, { status: 400 });
   const updated = await prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: ws.id, userId } }, data: { role } });
+  publish({ type: "workspace.members.changed", workspaceId: ws.id });
   return NextResponse.json({ member: updated });
 }
 
@@ -54,7 +61,9 @@ export async function DELETE(req: Request, context: any) {
   const ws = await prisma.workspace.findUnique({ where: { slug: params.slug }, include: { members: true } });
   if (!ws) return NextResponse.json({ message: "not found" }, { status: 404 });
   const me = ws.members.find((m) => m.userId === String(auth.sub));
-  if (!me || me.role !== "ADMIN") return NextResponse.json({ message: "forbidden" }, { status: 403 });
+  const current = await prisma.user.findUnique({ where: { id: String(auth.sub) }, select: { role: true } });
+  const allowed = (me && me.role === "ADMIN") || current?.role === "ADMIN";
+  if (!allowed) return NextResponse.json({ message: "forbidden" }, { status: 403 });
   const { userId } = await req.json().catch(() => ({}));
   if (!userId) return NextResponse.json({ message: "userId required" }, { status: 400 });
   // Prevent removing last admin
@@ -64,5 +73,6 @@ export async function DELETE(req: Request, context: any) {
     return NextResponse.json({ message: "cannot remove last admin" }, { status: 400 });
   }
   await prisma.workspaceMember.deleteMany({ where: { workspaceId: ws.id, userId } });
+  publish({ type: "workspace.members.changed", workspaceId: ws.id });
   return NextResponse.json({ ok: true });
 }

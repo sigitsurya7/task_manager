@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuth } from "@/lib/auth";
 import { promises as fs } from "fs";
 import path from "path";
+import { publish } from "@/lib/events";
 
 export const runtime = "nodejs";
 
@@ -23,5 +24,6 @@ export async function DELETE(_req: Request, context: any) {
     } catch {}
   }
   await prisma.attachment.delete({ where: { id: att.id } });
+  publish({ type: "task.updated", workspaceId: wsId, task: { id: att.taskId } as any });
   return NextResponse.json({ ok: true });
 }

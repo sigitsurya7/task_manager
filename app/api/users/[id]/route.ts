@@ -7,8 +7,6 @@ export async function PATCH(req: Request, context: any) {
   const { params } = context as { params: { id: string } };
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
-  const current = await prisma.user.findUnique({ where: { id: String(auth.sub) }, select: { role: true } });
-  if (current?.role !== "ADMIN") return NextResponse.json({ message: "forbidden" }, { status: 403 });
 
   const { username, email, name, password, role } = await req.json().catch(() => ({}));
 

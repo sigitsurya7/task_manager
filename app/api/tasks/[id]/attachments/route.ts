@@ -4,6 +4,7 @@ import { getAuth } from "@/lib/auth";
 import fs from "node:fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { publish } from "@/lib/events";
 
 export const runtime = "nodejs";
 
@@ -73,5 +74,9 @@ export async function POST(req: Request, context: any) {
   }
 
   const created = await prisma.attachment.create({ data: { taskId: params.id, name: att!.name, url: att!.url, type: att!.type || null } });
+  try {
+    const task = await prisma.task.findUnique({ where: { id: params.id }, include: { project: { include: { workspace: true } } } });
+    if (task) publish({ type: "task.updated", workspaceId: task.project.workspace.id, task: { id: task.id } as any });
+  } catch {}
   return NextResponse.json({ attachment: created }, { status: 201 });
 }
