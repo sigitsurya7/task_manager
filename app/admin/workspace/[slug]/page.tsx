@@ -13,7 +13,7 @@ import { Progress } from "@heroui/progress";
 import { Input, Textarea } from "@heroui/input";
 import { Checkbox } from "@heroui/checkbox";
 import { Modal, ModalContent, ModalHeader } from "@heroui/modal";
-import { FiFile, FiList, FiMenu, FiPlus, FiSave, FiTable, FiTrash2 } from "react-icons/fi";
+import { FiFile, FiList, FiMenu, FiPlus, FiSave, FiSearch, FiTable, FiTrash2 } from "react-icons/fi";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/dropdown";
 import { RiFileExcel2Fill, RiFilePdf2Fill } from "react-icons/ri";
 import {
@@ -48,6 +48,9 @@ import {
 } from "chart.js";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ChartTitle, Tooltip, Legend);
+import { MembersModal } from "@/components/admin/workspace/MembersModal";
+import { LabelsModal } from "@/components/admin/workspace/LabelsModal";
+import api from "@/lib/api";
 
 type Task = {
   id: string;
@@ -282,9 +285,20 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
   useEffect(() => {
     if (!task) return;
     setLoading(true);
-    setDue(task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 16) : "");
+    const toLocalInput = (dateStr?: string | null) => {
+      if (!dateStr) return "";
+      const d = new Date(dateStr);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const mm = pad(d.getMonth() + 1);
+      const dd = pad(d.getDate());
+      const hh = pad(d.getHours());
+      const mi = pad(d.getMinutes());
+      return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+    };
+    setDue(toLocalInput(task.dueDate));
     setStartEnabled(Boolean(task.startDate));
-    setStartDate(task.startDate ? new Date(task.startDate).toISOString().slice(0, 16) : "");
+    setStartDate(toLocalInput(task.startDate));
     setTitleEdit(task.title || "");
     setSelectedMemberIds(new Set((task.assignees ?? []).map((a)=>a.id)));
     setAssigneesLocal([...(task.assignees ?? [])]);
@@ -293,18 +307,14 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
 
     (async () => {
       try {
-        const meRes = await fetch(`/api/auth/me`, { credentials: 'include' });
-        const md = await meRes.json().catch(()=>null);
+        const md = await api.get<{ user?: any }>(`/api/auth/me`);
         if (alive) setMe(md?.user ?? null);
       } catch {}
       try {
-        const taskRes = await fetch(`/api/tasks/${task.id}`, { credentials: 'include' });
-        if (taskRes.ok) {
-          const d = await taskRes.json();
-          if (alive) setDesc(d.description || "");
-        } else if (alive) {
-          setDesc("");
-        }
+        const d = await api.get<{ description?: string }>(`/api/tasks/${task.id}`);
+        if (alive) setDesc(d.description || "");
+      } catch {
+        if (alive) setDesc("");
       } finally {
         if (alive) setLoading(false);
       }
@@ -314,52 +324,35 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
       try {
         const cached = __membersCache.get(slug);
         if (cached) { if (alive) setMembers(cached); return; }
-        const res = await fetch(`/api/workspaces/${slug}/members`, { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json();
-          const mem = data.members.map((m: any) => ({ ...m.user, role: m.role }));
-          __membersCache.set(slug, mem);
-          if (alive) setMembers(mem);
-        }
+        const data = await api.get<{ members: any[] }>(`/api/workspaces/${slug}/members`);
+        const mem = (data.members || []).map((m: any) => ({ ...m.user, role: m.role }));
+        __membersCache.set(slug, mem);
+        if (alive) setMembers(mem);
       } catch {}
     })();
 
     (async () => {
       try {
-        const r = await fetch(`/api/tasks/${task.id}/checklists`, { credentials: 'include' });
-        if (r.ok) {
-          const d = await r.json();
-          if (alive) setChecklists((d.checklists||[]).map((cl:any)=>({id:cl.id,title:cl.title,items:(cl.items||[]).map((it:any)=>({id:it.id,title:it.title,done:!!it.done}))})));
-        }
+        const d = await api.get<{ checklists?: any[] }>(`/api/tasks/${task.id}/checklists`);
+        if (alive) setChecklists((d.checklists||[]).map((cl:any)=>({id:cl.id,title:cl.title,items:(cl.items||[]).map((it:any)=>({id:it.id,title:it.title,done:!!it.done}))})));
       } catch {}
     })();
     (async () => {
       try {
-        const r = await fetch(`/api/tasks/${task.id}/labels`, { credentials: 'include' });
-        if (r.ok) {
-          const d = await r.json();
-          if (alive) setAllLabels(d.labels||[]);
-        }
+        const d = await api.get<{ labels?: any[] }>(`/api/tasks/${task.id}/labels`);
+        if (alive) setAllLabels(d.labels||[]);
       } catch {}
     })();
     (async () => {
       try {
-        const r = await fetch(`/api/tasks/${task.id}/attachments`, { credentials: 'include' });
-        if (r.ok) {
-          const d = await r.json();
-          if (alive) setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'})));
-        }
+        const d = await api.get<{ attachments?: any[] }>(`/api/tasks/${task.id}/attachments`);
+        if (alive) setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'})));
       } catch {}
     })();
     (async () => {
       try {
-        const r = await fetch(`/api/comments?taskId=${task.id}`, { credentials: 'include' });
-        if (r.ok) {
-          const d = await r.json();
-          if (alive) setComments(d.comments || []);
-        } else if (alive) {
-          setComments([]);
-        }
+        const d = await api.get<{ comments?: any[] }>(`/api/comments?taskId=${task.id}`);
+        if (alive) setComments(d.comments || []);
       } catch { if (alive) setComments([]); }
     })();
 
@@ -370,47 +363,39 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
   useEffect(() => {
     if (!task) return;
     let es: EventSource | null = null;
-    const refresh = async () => {
-      try {
-        const [tRes, cRes, aRes, lRes] = await Promise.all([
-          fetch(`/api/tasks/${task.id}`, { credentials: 'include' }),
-          fetch(`/api/comments?taskId=${task.id}`, { credentials: 'include' }),
-          fetch(`/api/tasks/${task.id}/attachments`, { credentials: 'include' }),
-          fetch(`/api/tasks/${task.id}/labels`, { credentials: 'include' }),
-        ]);
-        if (tRes.ok) { const d = await tRes.json(); setDesc(d.description || ""); setAssigneesLocal(d.assignees || []); setSelectedMemberIds(new Set((d.assignees||[]).map((a:any)=>a.id))); }
-        if (cRes.ok) { const d = await cRes.json(); setComments(d.comments || []); }
-        if (aRes.ok) { const d = await aRes.json(); setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'}))); }
-        if (lRes.ok) { const d = await lRes.json(); setAllLabels(d.labels||[]); }
-      } catch {}
-    };
+      const refresh = async () => {
+        try {
+          const [tRes, cRes, aRes, lRes] = await Promise.allSettled([
+            api.get(`/api/tasks/${task.id}`),
+            api.get(`/api/comments?taskId=${task.id}`),
+            api.get(`/api/tasks/${task.id}/attachments`),
+            api.get(`/api/tasks/${task.id}/labels`),
+          ]);
+          if (tRes.status === 'fulfilled') { const d: any = tRes.value; setDesc(d.description || ""); setAssigneesLocal(d.assignees || []); setSelectedMemberIds(new Set((d.assignees||[]).map((a:any)=>a.id))); const toLocal = (s?: string|null)=>{ if(!s) return ""; const dt=new Date(s); const p=(n:number)=>String(n).padStart(2,'0'); return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`; }; setDue(toLocal(d.dueDate)); setStartDate(toLocal(d.startDate)); setStartEnabled(Boolean(d.startDate)); }
+          if (cRes.status === 'fulfilled') { const d: any = cRes.value; setComments(d.comments || []); }
+          if (aRes.status === 'fulfilled') { const d: any = aRes.value; setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'}))); }
+          if (lRes.status === 'fulfilled') { const d: any = lRes.value; setAllLabels(d.labels||[]); }
+        } catch {}
+      };
     try {
       es = new EventSource(`/api/events?workspace=${encodeURIComponent(slug)}`, { withCredentials: true } as any);
       es.onmessage = (msg) => {
         try {
           const evt = JSON.parse(msg.data);
-          if ((evt.type === 'task.updated' && evt.task && evt.task.id === task.id) ||
-              (evt.type === 'comment.created' && evt.taskId === task.id)) {
-            refresh();
-          }
+          const isThisTask = evt?.taskId === task.id || evt?.task?.id === task.id;
+          if (evt.type === 'task.deleted' && isThisTask) { onClose(); return; }
           if (evt.type === 'workspace.members.changed') {
-            // refresh members list used by TaskDetail dialogs
             (async () => {
               try {
-                const res = await fetch(`/api/workspaces/${slug}/members`, { credentials: 'include' });
-                if (res.ok) {
-                  const data = await res.json();
-                  const mem = (data.members||[]).map((m:any)=> ({ ...m.user, role: m.role }));
-                  try { __membersCache.set(slug, mem); } catch {}
-                  setMembers(mem);
-                }
+                const data = await api.get<{ members?: any[] }>(`/api/workspaces/${slug}/members`);
+                const mem = (data.members||[]).map((m:any)=> ({ ...m.user, role: m.role }));
+                try { __membersCache.set(slug, mem); } catch {}
+                setMembers(mem);
               } catch {}
             })();
+            return;
           }
-          if (evt.type === 'task.deleted' && evt.taskId === task.id) {
-            // task removed by others; close the modal gracefully
-            onClose();
-          }
+          if (isThisTask) { refresh(); }
         } catch {}
       };
     } catch {}
@@ -432,8 +417,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     if (isViewer) return;
     try {
       setSavingDesc(true);
-      const res = await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: desc }) });
-      if (!res.ok) throw new Error('Failed');
+      await api.patch(`/api/tasks/${task.id}`, { description: desc });
       onChanged();
       toast.success('Berhasil menyimpan deskripsi');
     } catch {
@@ -447,8 +431,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     if (isViewer || !titleEdit.trim()) return;
     try {
       setSavingTitle(true);
-      const res = await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: titleEdit.trim() }) });
-      if (!res.ok) throw new Error('Failed');
+      await api.patch(`/api/tasks/${task.id}`, { title: titleEdit.trim() });
       setIsEditingTitle(false);
       onChanged();
       toast.success('Judul berhasil disimpan');
@@ -461,7 +444,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
       title: 'Hapus task?',
       message: 'Semua data terkait (komentar, checklist, lampiran) akan dihapus.',
       onConfirm: async () => {
-        try { await fetch(`/api/tasks/${task.id}`, { method: 'DELETE', credentials: 'include' }); } catch {}
+        try { await api.del(`/api/tasks/${task.id}`); } catch {}
         onClose();
         onChanged();
       },
@@ -471,14 +454,14 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     if (isViewer) return;
     try {
       setDue(val);
-      await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dueDate: val ? new Date(val).toISOString() : null }) });
+      await api.patch(`/api/tasks/${task.id}`, { dueDate: val ? new Date(val).toISOString() : null });
       onChanged();
     } catch {}
   };
   const addAssignee = async () => {
     if (isViewer || !selectedMember) return;
     try {
-      await fetch(`/api/tasks/${task.id}/assignees`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: selectedMember }) });
+      await api.post(`/api/tasks/${task.id}/assignees`, { userId: selectedMember });
       setSelectedMember(null);
       setAddMemberOpen(false);
       onChanged();
@@ -487,7 +470,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
   const addLabel = async () => {
     if (isViewer || !labelName.trim()) return;
     try {
-      await fetch(`/api/tasks/${task.id}/labels`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: labelName.trim(), color: labelColor }) });
+      await api.post(`/api/tasks/${task.id}/labels`, { name: labelName.trim(), color: labelColor });
       setLabelName("");
       onChanged();
     } catch {}
@@ -496,12 +479,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
   const addChecklistGroup = async () => {
     if (!checklistTitle.trim() || !task) return;
     try {
-      const res = await fetch(`/api/tasks/${task.id}/checklists`, {
-        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: checklistTitle.trim() })
-      });
-      if (!res.ok) throw new Error('Failed');
-      const d = await res.json();
+      const d = await api.post<{ checklist: { id: string; title: string } }>(`/api/tasks/${task.id}/checklists`, { title: checklistTitle.trim() });
       setChecklists((arr) => [{ id: d.checklist.id, title: d.checklist.title, items: [] }, ...arr]);
       setChecklistTitle("Checklist");
       setChecklistModal(false);
@@ -514,12 +492,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     const title = (newItem[groupId] || "").trim();
     if (!title) return;
     try {
-      const res = await fetch(`/api/checklists/${groupId}/items`, {
-        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title })
-      });
-      if (!res.ok) throw new Error('Failed');
-      const d = await res.json();
+      const d = await api.post<{ item: { id: string; title: string; done?: boolean } }>(`/api/checklists/${groupId}/items`, { title });
       setChecklists((arr) => arr.map((g) => g.id === groupId ? { ...g, items: [{ id: d.item.id, title: d.item.title, done: !!d.item.done }, ...g.items] } : g));
       setNewItem((m) => ({ ...m, [groupId]: "" }));
     } catch {
@@ -533,38 +506,33 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const r = await fetch(`/api/tasks/${task.id}/attachments`, { method:'POST', credentials:'include', body: fd });
-      if (!r.ok) throw new Error('upload failed');
-      const d = await r.json();
+      const d = await api.request<{ attachment: { id: string; name: string; url: string; type?: string } }>(`/api/tasks/${task.id}/attachments`, { method:'POST', body: fd });
       setAttachments((arr)=>[{ id: d.attachment.id, name: d.attachment.name, url: d.attachment.url, type: d.attachment.type || 'file' }, ...arr]);
     } catch {}
   };
   const addAttachmentLink = async (link: string, display?: string) => {
     if (!task) return;
     try {
-      const r = await fetch(`/api/tasks/${task.id}/attachments`, { method:'POST', credentials:'include', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ link, display }) });
-      if (!r.ok) throw new Error('link failed');
-      const d = await r.json();
+      const d = await api.post<{ attachment: { id: string; name: string; url: string; type?: string } }>(`/api/tasks/${task.id}/attachments`, { link, display });
       setAttachments((arr)=>[{ id: d.attachment.id, name: d.attachment.name, url: d.attachment.url, type: d.attachment.type || 'link' }, ...arr]);
     } catch {}
   };
   const deleteAttachment = async (id: string) => {
     try {
-      await fetch(`/api/attachments/${id}`, { method:'DELETE', credentials:'include' });
+      await api.del(`/api/attachments/${id}`);
       setAttachments((arr)=>arr.filter((x)=>x.id!==id));
     } catch {}
   };
   const submitComment = async () => {
     if (!comment.trim()) return;
     try {
-      await fetch(`/api/comments`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId: task.id, body: comment }) });
+      await api.post(`/api/comments`, { taskId: task.id, body: comment });
       setComment("");
     } catch {}
   };
   const deleteComment = async (id: string) => {
     try {
-      const r = await fetch(`/api/comments/${id}`, { method:'DELETE', credentials:'include' });
-      if (!r.ok) throw new Error('Failed');
+      await api.del(`/api/comments/${id}`);
       setComments((arr)=>arr.filter((c)=>c.id!==id));
       toast.success('Komentar dihapus');
     } catch {
@@ -667,7 +635,10 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
           <div>
             <p className="text-tiny text-default-500">Batas waktu</p>
             <div className="mt-2">
-              <Button variant="bordered" size="sm" onPress={()=>setDateModal(true)} disabled={isViewer}>{task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Set dates'}</Button>
+              {(() => {
+                const display = due ? new Date(due).toLocaleString() : (task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Set dates');
+                return <Button variant="bordered" size="sm" onPress={()=>setDateModal(true)} disabled={isViewer}>{display}</Button>;
+              })()}
             </div>
           </div>
         </div>
@@ -689,7 +660,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                     title: 'Hapus checklist?',
                     message: 'Tindakan ini tidak dapat dibatalkan.',
                     onConfirm: async () => {
-                      try { await fetch(`/api/checklists/${g.id}`, { method: 'DELETE', credentials: 'include' }); toast.success('Checklist dihapus'); } catch { toast.error('Gagal menghapus'); }
+                      try { await api.del(`/api/checklists/${g.id}`); toast.success('Checklist dihapus'); } catch { toast.error('Gagal menghapus'); }
                       setChecklists((arr)=>arr.filter((x)=>x.id!==g.id));
                     }
                   });
@@ -717,7 +688,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                   <label key={c.id} className="flex items-center gap-2 text-sm">
                     <Checkbox size="sm" isSelected={c.done} onValueChange={async (checked)=>{
                       setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, done:checked}:it)}:gr));
-                      try { await fetch(`/api/checklist-items/${c.id}`, { method:'PATCH', credentials:'include', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ done: checked }) }); } catch {}
+                      try { await api.patch(`/api/checklist-items/${c.id}`, { done: checked }); } catch {}
                     }} isDisabled={isViewer} />
                     <div className="flex-1">
                       <Input
@@ -729,10 +700,10 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                           setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, title:val}:it)}:gr));
                           try { clearTimeout(itemTimers.current[c.id]); } catch {}
                           itemTimers.current[c.id] = setTimeout(async ()=>{
-                            try { await fetch(`/api/checklist-items/${c.id}`, { method:'PATCH', credentials:'include', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: val }) }); } catch {}
+                            try { await api.patch(`/api/checklist-items/${c.id}`, { title: val }); } catch {}
                           }, 500);
                         }}
-                        onBlur={async ()=>{ try { clearTimeout(itemTimers.current[c.id]); await fetch(`/api/checklist-items/${c.id}`, { method:'PATCH', credentials:'include', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: c.title }) }); } catch {} }}
+                        onBlur={async ()=>{ try { clearTimeout(itemTimers.current[c.id]); await api.patch(`/api/checklist-items/${c.id}`, { title: c.title }); } catch {} }}
                       />
                     </div>
                     {!isViewer && (
@@ -742,7 +713,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                           title: 'Hapus item checklist?',
                           message: 'Item akan dihapus permanen.',
                           onConfirm: async () => {
-                            try { await fetch(`/api/checklist-items/${c.id}`, { method:'DELETE', credentials:'include' }); toast.success('Item dihapus'); } catch { toast.error('Gagal menghapus'); }
+                            try { await api.del(`/api/checklist-items/${c.id}`); toast.success('Item dihapus'); } catch { toast.error('Gagal menghapus'); }
                             setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.filter(it=>it.id!==c.id)}:gr));
                           }
                         });
@@ -770,7 +741,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
           comment={comment}
           setComment={setComment}
           comments={comments}
-          onSubmit={async ()=>{ await submitComment(); try{ const r=await fetch(`/api/comments?taskId=${task.id}`, { credentials:'include' }); const d=await r.json(); setComments(d.comments||[]);}catch{} }}
+          onSubmit={async ()=>{ await submitComment(); /* SSE will refresh comments */ }}
           onDelete={deleteComment}
           onPasteFile={(f)=>addAttachmentFile(f)}
         />
@@ -783,7 +754,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
           <div className="p-6">
             <ModalHeader className="p-0 mb-3">Tambah daftar periksa</ModalHeader>
             <div className="grid gap-3">
-              <Input autoFocus label="Judul" variant="bordered" value={checklistTitle} onValueChange={setChecklistTitle} />
+              <Input label="Judul" variant="bordered" value={checklistTitle} onValueChange={setChecklistTitle} />
               <div className="flex justify-end gap-2">
                 <Button variant="light" onPress={() => setChecklistModal(false)}>Batal</Button>
                 <Button color="primary" onPress={addChecklistGroup}>Tambah</Button>
@@ -795,59 +766,18 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     </Modal>
 
     {/* Members Modal */}
-    <Modal isOpen={memberModal} onOpenChange={setMemberModal}>
-      <ModalContent>
-        {() => (
-          <div className="p-6">
-            <ModalHeader className="p-0 mb-3">Anggota</ModalHeader>
-            <Input placeholder="Cari anggota" value={memberQuery} onValueChange={setMemberQuery} className="mb-3" />
-            <div className="overflow-y-auto overflow-x-hidden pb-20 max-h-80 no-scrollbar space-y-2">
-              {members
-                .filter((u)=> u.role !== 'VIEWER')
-                .filter((u)=> u.username.toLowerCase().includes(memberQuery.toLowerCase()) || (u.name??'').toLowerCase().includes(memberQuery.toLowerCase()))
-                .map((u)=>(
-                  <label key={u.id} className="flex items-center justify-between shadow rounded-lg px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <Avatar name={u.name ?? u.username} size="sm" />
-                      <span>{u.name ? `${u.name}` : u.username}</span>
-                    </div>
-                    <Checkbox isSelected={selectedMemberIds.has(u.id)} onValueChange={(val)=>{
-                      setSelectedMemberIds(prev=>{ const s=new Set(prev); if(val) s.add(u.id); else s.delete(u.id); return s; });
-                    }} />
-                  </label>
-                ))}
-            </div>
-            <div className="flex justify-end gap-2 mt-3">
-              <Button variant="light" onPress={()=>setMemberModal(false)}>Tutup</Button>
-              <Button color="primary" onPress={async ()=>{
-                const currentIds = new Set((task.assignees||[]).map(a=>a.id));
-                // Add newly selected
-                for (const id of Array.from(selectedMemberIds)) {
-                  if (!currentIds.has(id)) {
-                    await fetch(`/api/tasks/${task.id}/assignees`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId:id })});
-                  }
-                }
-                // Remove unchecked
-                for (const id of Array.from(currentIds)) {
-                  if (!selectedMemberIds.has(id)) {
-                    await fetch(`/api/tasks/${task.id}/assignees`, { method:'DELETE', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId:id })});
-                  }
-                }
-                // Update local assignees for immediate UI feedback
-                const nextIds = Array.from(selectedMemberIds);
-                const nextAssignees = nextIds
-                  .map((id)=> members.find((m)=>m.id===id))
-                  .filter(Boolean)
-                  .map((m)=> ({ id: m!.id, name: m!.name, username: m!.username }));
-                setAssigneesLocal(nextAssignees as any);
-                setMemberModal(false);
-                onChanged();
-              }}>Terapkan</Button>
-            </div>
-          </div>
-        )}
-      </ModalContent>
-    </Modal>
+    <MembersModal
+      isOpen={memberModal}
+      onOpenChange={setMemberModal}
+      isViewer={isViewer}
+      members={members}
+      memberQuery={memberQuery}
+      setMemberQuery={setMemberQuery}
+      selectedMemberIds={selectedMemberIds}
+      setSelectedMemberIds={(updater)=>setSelectedMemberIds((prev)=>updater(prev))}
+      taskId={task.id}
+      onApplied={(next)=>{ setAssigneesLocal(next as any); onChanged(); }}
+    />
 
     {/* Attachment Modal (stage then save) */}
     <Modal isOpen={attachModal} onOpenChange={setAttachModal}>
@@ -890,7 +820,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
               preview.att.type?.startsWith('image/') ? (
                 <img src={preview.att.url} alt={preview.att.name} className="max-h-[75vh] w-full object-contain" />
               ) : (preview.att.type === 'application/pdf' || (preview.att.url||'').toLowerCase().endsWith('.pdf')) ? (
-                <iframe src={preview.att.url} className="w-full h-[75vh]" />
+                <iframe src={preview.att.url} className="w-full h-[75vh]" title="Attachment preview" />
               ) : (
                 <p className="text-sm text-default-500">Preview tidak tersedia untuk tipe ini. <a className="text-primary" href={preview.att.url} target="_blank" rel="noreferrer">Buka di tab baru</a>.</p>
               )
@@ -917,66 +847,21 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     </Modal>
 
     {/* Labels Modal with improved UX */}
-    <Modal isOpen={labelModal} onOpenChange={setLabelModal}>
-      <ModalContent>
-        {() => (
-          <div className="p-6">
-            <ModalHeader className="p-0 mb-3">Label</ModalHeader>
-            <Input placeholder="Cari label..." value={labelQuery} onValueChange={setLabelQuery} className="mb-3" />
-            <div className="space-y-2 mb-4">
-              {allLabels
-                .filter(l=> l.name.toLowerCase().includes(labelQuery.toLowerCase()))
-                .map((l)=>(
-                  <div key={l.id} className="flex items-center justify-between px-2 py-1 rounded-md border border-default-200">
-                    <span className="text-sm">{l.name}</span>
-                    {!isViewer && (
-                      l.selected ? (
-                        <Button size="sm" variant="light" color="danger" onPress={async ()=>{
-                          try { await fetch(`/api/tasks/${task.id}/labels`, { method:'DELETE', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ labelId: l.id }) }); setAllLabels((arr)=>arr.map(x=>x.id===l.id?{...x, selected:false}:x)); onChanged(); } catch {}
-                        }}>Lepas</Button>
-                      ) : (
-                        <Button size="sm" variant="light" onPress={async ()=>{
-                          try { await fetch(`/api/tasks/${task.id}/labels`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ labelId: l.id }) }); setAllLabels((arr)=>arr.map(x=>x.id===l.id?{...x, selected:true}:x)); onChanged(); } catch {}
-                        }}>Tambah</Button>
-                      )
-                    )}
-                  </div>
-                ))}
-            </div>
-            {/* Create new label UX */}
-            {(!isViewer) && (
-              <div className="mt-2">
-                {!showCreateLabel && allLabels.length > 0 ? (
-                  <Button size="sm" variant="bordered" onPress={()=>setShowCreateLabel(true)}>Tambah label baru</Button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Input aria-label="Nama label baru" placeholder="Nama label baru" value={newLabelName} onValueChange={setNewLabelName} variant="bordered" className="flex-1" />
-                    <Button isIconOnly color="primary" aria-label="Simpan label" onPress={async ()=>{
-                      const name = newLabelName.trim();
-                      if(!name) return;
-                      try {
-                        await fetch(`/api/tasks/${task.id}/labels`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
-                        setNewLabelName("");
-                        try { const r = await fetch(`/api/tasks/${task.id}/labels`, { credentials:'include' }); const d = await r.json(); setAllLabels(d.labels||[]); } catch {}
-                        onChanged();
-                        if (allLabels.length > 0) setShowCreateLabel(false);
-                      } catch {}
-                    }}>
-                      <FiSave />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="light" onPress={()=>setLabelModal(false)}>Tutup</Button>
-              <Button color="primary" onPress={async ()=>{ try{ const r=await fetch(`/api/tasks/${task.id}/labels`, { credentials:'include' }); const d=await r.json(); setAllLabels(d.labels||[]);}catch{} onChanged(); setLabelModal(false); }}>Simpan</Button>
-            </div>
-          </div>
-        )}
-      </ModalContent>
-    </Modal>
+    <LabelsModal
+      isOpen={labelModal}
+      onOpenChange={setLabelModal}
+      isViewer={isViewer}
+      allLabels={allLabels}
+      setAllLabels={(updater)=>setAllLabels((prev)=>updater(prev))}
+      labelQuery={labelQuery}
+      setLabelQuery={setLabelQuery}
+      showCreateLabel={showCreateLabel}
+      setShowCreateLabel={setShowCreateLabel}
+      newLabelName={newLabelName}
+      setNewLabelName={setNewLabelName}
+      taskId={task.id}
+      onChanged={onChanged}
+    />
 
     {/* Dates Modal */}
     <Modal isOpen={dateModal} onOpenChange={setDateModal}>
@@ -1024,7 +909,7 @@ function Column({ data, onAdd, onOpen }: { data: ColumnData; onAdd: (colId: stri
   const { setNodeRef } = useDroppable({ id: data.id });
   const formRef = useRef<HTMLDivElement | null>(null);
   return (
-    <div className="flex h-full w-72 sm:w-63 flex-col rounded-2xl border border-default-200 bg-content1 p-3">
+    <div className="flex h-full w-72 sm:w-63 flex-col rounded-2xl border border-default-200 bg-content1 p-3 mb-6">
       <div className="flex items-center gap-3">
         <h3 className="text-small font-semibold text-default-600">
           {data.title}
@@ -1117,10 +1002,24 @@ export default function WorkspaceBoardPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [viewMode, setViewMode] = useState<'list'|'table'|'report'>('list');
+  const [listQuery, setListQuery] = useState("");
   const [tableQuery, setTableQuery] = useState("");
   const [sortKey, setSortKey] = useState<null | 'status' | 'due'>(null);
   const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
   const rows = useMemo(() => columns.flatMap((c)=> (c.tasks||[]).map((t)=>({ task: t, column: c }))), [columns]);
+  const listFilteredColumns = useMemo(() => {
+    const q = listQuery.trim().toLowerCase();
+    if (!q) return columns;
+    return columns.map((c) => ({
+      ...c,
+      tasks: (c.tasks || []).filter((t) => {
+        const inTitle = t.title.toLowerCase().includes(q);
+        const inLabels = (t.tags || []).some((l) => (l.name || '').toLowerCase().includes(q));
+        const inAssignees = (t.assignees || []).some((a) => ((a.name || a.username || '') + '').toLowerCase().includes(q));
+        return inTitle || inLabels || inAssignees;
+      }),
+    }));
+  }, [columns, listQuery]);
   const filteredSortedRows = useMemo(() => {
     const q = tableQuery.trim().toLowerCase();
     let arr = rows.filter(({ task, column }) => {
@@ -1160,14 +1059,11 @@ export default function WorkspaceBoardPage() {
     }
     (async () => {
       try {
-        const res = await fetch(`/api/workspaces/${slug}/members`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          const mem = (data.members||[]).map((m:any)=>({ id:m.user.id, username:m.user.username, name:m.user.name }));
-          setReportMembers(mem);
-          // seed cache for TaskDetail reuse
-          try { __membersCache.set(slug, (data.members||[]).map((m:any)=>({ ...m.user, role: m.role }))); } catch {}
-        }
+        const data = await api.get<{ members?: any[] }>(`/api/workspaces/${slug}/members`);
+        const mem = (data.members||[]).map((m:any)=>({ id:m.user.id, username:m.user.username, name:m.user.name }));
+        setReportMembers(mem);
+        // seed cache for TaskDetail reuse
+        try { __membersCache.set(slug, (data.members||[]).map((m:any)=>({ ...m.user, role: m.role }))); } catch {}
       } catch {}
     })();
   }, [slug, viewMode]);
@@ -1235,14 +1131,11 @@ export default function WorkspaceBoardPage() {
   const loadAvailableUsers = async () => {
     try {
       // fetch users (first page, 100 items), then filter to user.role === 'MEMBER'
-      const res = await fetch(`/api/users?page=1&pageSize=100&q=${encodeURIComponent(userQuery)}`, { credentials: 'include' });
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await api.get<{ users?: any[] }>(`/api/users?page=1&pageSize=100&q=${encodeURIComponent(userQuery)}`);
       const list = (data.users||[]) as any[];
-      const wsRes = await fetch(`/api/workspaces/${slug}/members`, { credentials: 'include' });
+      const d = await api.get<{ members?: any[] }>(`/api/workspaces/${slug}/members`);
       let memberIds = new Set<string>();
-      if (wsRes.ok) {
-        const d = await wsRes.json();
+      {
         const cur = (d.members||[]).map((m:any)=> ({ id:m.user.id, username:m.user.username, name:m.user.name||null, role: m.role }));
         setCurrentMembers(cur);
         memberIds = new Set<string>(cur.map((x:any)=>x.id));
@@ -1256,7 +1149,7 @@ export default function WorkspaceBoardPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-64px-48px)] min-h-0 flex-col overflow-hidden">
+    <div className="flex h-[calc(100dvh-64px-48px)] min-h-0 flex-col overflow-x-hidden">
       <header className="flex items-center justify-between py-2 px-2 sm:px-0">
         <div className="flex flex-row gap-5">
           <div>
@@ -1289,10 +1182,20 @@ export default function WorkspaceBoardPage() {
       </header>
 
       {viewMode === 'list' ? (
-      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden no-scrollbar">
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto no-scrollbar pb-8">
+        <div className="px-2 sm:px-0 pb-2">
+          <Input
+            placeholder="Cari Task"
+            startContent={<FiSearch />}
+            variant="bordered"
+            value={listQuery}
+            onValueChange={setListQuery}
+            className="max-w-sm"
+          />
+        </div>
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
             <div className="flex h-full min-w-full gap-4 pb-2 pr-2">
-              {columns.map((col) => (
+              {listFilteredColumns.map((col) => (
                 <div key={col.id} className="flex h-full min-h-0 flex-col">
                   <Column data={col} onAdd={addTask} onOpen={(t) => openTask(t, col)} />
                 </div>
@@ -1472,12 +1375,9 @@ export default function WorkspaceBoardPage() {
                 <Button variant="light" onPress={() => setConfirmOpen(false)}>Batal</Button>
                 <Button color="danger" onPress={async () => {
                   try {
-                    const res = await fetch(`/api/workspaces/${slug}`, { method: 'DELETE', credentials: 'include' });
-                    if (!res.ok) throw new Error('Failed');
-                    setConfirmOpen(false);
-                    // refresh sidebar workspaces immediately
-                    try { useWorkspaces.getState().fetch(); } catch {}
-                    router.push('/admin/dashboard');
+                    await api.del(`/api/workspaces/${slug}`);
+                     setConfirmOpen(false);
+                     router.push('/admin/dashboard');
                   } catch {
                     setConfirmOpen(false);
                   }
@@ -1510,10 +1410,9 @@ export default function WorkspaceBoardPage() {
                           <Select size="sm" className="max-w-xs" selectedKeys={[m.role]} onSelectionChange={async (k)=>{
                             try {
                               const role = Array.from(k)[0] as 'ADMIN'|'MEMBER'|'VIEWER';
-                              await fetch(`/api/workspaces/${slug}/members`, { method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: m.id, role }) });
+                              await api.patch(`/api/workspaces/${slug}/members`, { userId: m.id, role });
                               setCurrentMembers(list=> list.map(x=> x.id===m.id ? { ...x, role } : x));
                               toast.success('Role diperbarui');
-                              try { useBoard.getState().load(slug); } catch {}
                             } catch {
                               toast.error('Gagal memperbarui role');
                             }
@@ -1524,15 +1423,14 @@ export default function WorkspaceBoardPage() {
                           </Select>
                           <Button size="sm" color="danger" variant="flat" onPress={async ()=>{
                             try {
-                              await fetch(`/api/workspaces/${slug}/members`, { method:'DELETE', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: m.id }) });
+                              await api.del(`/api/workspaces/${slug}/members`, { userId: m.id });
                               const taskIds: string[] = [];
                               try { (columns||[]).forEach(c=> (c.tasks||[]).forEach(t=> { if ((t.assignees||[]).some(a=>a.id===m.id)) taskIds.push(t.id); })); } catch {}
                               for (const tid of taskIds) {
-                                await fetch(`/api/tasks/${tid}/assignees`, { method:'DELETE', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: m.id }) });
+                                await api.del(`/api/tasks/${tid}/assignees`, { userId: m.id });
                               }
                               setCurrentMembers(list=> list.filter(x=> x.id!==m.id));
-                              toast.success('Anggota dihapus');
-                              try { useBoard.getState().load(slug); } catch {}
+                               toast.success('Anggota dihapus');
                             } catch {
                               toast.error('Gagal menghapus anggota');
                             }
@@ -1595,17 +1493,15 @@ export default function WorkspaceBoardPage() {
                           const u = availableUsers.find(x=>x.id===id);
                           if (!u) return;
                           const role = selectedRoles[id] || 'MEMBER';
-                          await fetch(`/api/workspaces/${slug}/members`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ usernameOrEmail: u.username, role }) });
+                          await api.post(`/api/workspaces/${slug}/members`, { usernameOrEmail: u.username, role });
                         }));
                       }
                       toast.success(ids.length? 'Anggota ditambahkan' : 'Selesai');
                       await loadAvailableUsers();
-                      load(slug)
                       setAddMembersOpen(false);
                       setSelectedUserIds(new Set());
                       setSelectedRoles({});
-                      try { useWorkspaces.getState().fetch(); } catch {}
-                      try { useBoard.getState().load(slug); } catch {}
+                      
                     } catch {
                       toast.error('Gagal menyimpan perubahan');
                     }
@@ -1620,3 +1516,5 @@ export default function WorkspaceBoardPage() {
     </div>
   );
 }
+
+

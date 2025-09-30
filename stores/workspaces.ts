@@ -17,11 +17,14 @@ type State = {
   loading: boolean;
   fetch: () => Promise<void>;
   add: (data: { name: string; slug: string; iconKey?: string }) => Promise<void>;
+  es?: EventSource | null;
+  connectSSE: () => void;
 };
 
 export const useWorkspaces = create<State>((set, get) => ({
   items: [],
   loading: false,
+  es: null,
   fetch: async () => {
     if (get().loading) return;
     set({ loading: true });
@@ -43,5 +46,25 @@ export const useWorkspaces = create<State>((set, get) => ({
       toast.error(e?.response?.data?.message ?? "Gagal membuat workspace");
     }
   },
+  connectSSE: () => {
+    if (typeof window === "undefined") return;
+    try { get().es?.close(); } catch {}
+    const es = new EventSource(`/api/user-events`, { withCredentials: true } as any);
+    set({ es });
+    es.onmessage = (msg) => {
+      try {
+        const evt = JSON.parse(msg.data);
+        if (evt.type === "workspaces.changed") {
+          get().fetch();
+        }
+      } catch {}
+    };
+    es.onerror = () => {
+      try { es.close(); } catch {}
+      set({ es: null });
+      setTimeout(() => {
+        get().connectSSE();
+      }, 3000);
+    };
+  },
 }));
-

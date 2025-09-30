@@ -34,6 +34,7 @@ export async function POST(req: Request, context: any) {
     update: { role },
   });
   publish({ type: "workspace.members.changed", workspaceId: ws.id });
+  try { publish({ type: "workspaces.changed", userId: user.id }); } catch {}
   return NextResponse.json({ member: { id: mem.id, role: mem.role, user: { id: user.id, email: user.email, username: user.username, name: user.name } } });
 }
 
@@ -74,5 +75,6 @@ export async function DELETE(req: Request, context: any) {
   }
   await prisma.workspaceMember.deleteMany({ where: { workspaceId: ws.id, userId } });
   publish({ type: "workspace.members.changed", workspaceId: ws.id });
+  try { publish({ type: "workspaces.changed", userId }); } catch {}
   return NextResponse.json({ ok: true });
 }

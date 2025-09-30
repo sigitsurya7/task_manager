@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { publish } from "@/lib/events";
 
 export async function GET() {
   const auth = await getAuth();
@@ -64,5 +65,6 @@ export async function POST(req: Request) {
       },
     },
   });
+  try { publish({ type: "workspaces.changed", userId }); } catch {}
   return NextResponse.json({ workspace: { id: ws.id, name: ws.name, slug: ws.slug, iconKey: ws.iconKey, role: "ADMIN" } }, { status: 201 });
 }

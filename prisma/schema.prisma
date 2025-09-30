@@ -117,7 +117,7 @@ model Task {
   boardId     String
   columnId    String
   title       String
-  description String?
+  description String? @db.Text
   priority    String?
   progress    Int?      // 0 - 100
   dueDate     DateTime?

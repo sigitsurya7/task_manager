@@ -70,8 +70,8 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
-  const { items, fetch } = useWorkspaces();
-  useEffect(() => { fetch(); }, [fetch]);
+  const { items, fetch, connectSSE } = useWorkspaces();
+  useEffect(() => { fetch(); connectSSE(); }, [fetch, connectSSE]);
   
   const menuItems = baseMenu;
   const workspaces = useMemo<Item[]>(() =>
@@ -134,7 +134,6 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
       setIconKey("FiZap");
       setSelectedMembers(new Set());
       setSubmitAttempted(false);
-      fetch();
       toast.success("Workspace dibuat");
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? "Gagal membuat workspace");

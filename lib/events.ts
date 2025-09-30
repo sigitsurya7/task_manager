@@ -6,7 +6,9 @@ export type BoardEvent =
   | { type: "task.moved"; workspaceId: string; taskId: string; fromColumnId: string; toColumnId: string; position: string }
   | { type: "comment.created"; workspaceId: string; taskId: string; commentId: string }
   | { type: "task.deleted"; workspaceId: string; taskId: string }
-  | { type: "workspace.members.changed"; workspaceId: string };
+  | { type: "workspace.members.changed"; workspaceId: string }
+  // user-scoped events
+  | { type: "workspaces.changed"; userId: string };
 
 export const emitter = new EventEmitter();
 

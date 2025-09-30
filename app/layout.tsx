@@ -46,15 +46,15 @@ export default function RootLayout({
       <head />
       <body
         className={clsx(
-          "min-h-screen text-foreground bg-background font-sans antialiased",
+          "min-h-dvh text-foreground bg-background font-sans antialiased",
           fontSans.variable,
         )}
       >
         <Providers themeProps={{ attribute: "class", defaultTheme: "dark" }}>
-          <div className="relative flex flex-col h-screen">
+          <div className="relative flex flex-col min-h-dvh">
             <Toaster position="top-center" />
             <RegisterSW />
-            <main className="px-4 py-4 flex-grow">
+            <main className="px-4 py-4 flex-1 min-h-0">
               {children}
             </main>
             {/* <footer className="w-full flex gap-2 items-center justify-center py-3">

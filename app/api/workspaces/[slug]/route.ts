@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { publish } from "@/lib/events";
 import { getAuth } from "@/lib/auth";
 
 export async function DELETE(_req: Request, context: any) {
@@ -52,6 +53,11 @@ export async function DELETE(_req: Request, context: any) {
     // finally delete workspace
     await tx.workspace.delete({ where: { id: ws.id } });
   });
-
+  try {
+    // notify all members (including deleter) to refresh workspace list
+    for (const m of ws.members) {
+      try { publish({ type: "workspaces.changed", userId: m.userId }); } catch {}
+    }
+  } catch {}
   return NextResponse.json({ ok: true });
 }
