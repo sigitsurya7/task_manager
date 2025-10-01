@@ -11,7 +11,13 @@ export type BoardEvent =
   | { type: "workspaces.changed"; userId: string }
   | { type: "notification"; userId: string; notification: { id: string; title: string; message?: string; url?: string; createdAt: string } };
 
-export const emitter = new EventEmitter();
+// Ensure a single emitter instance across hot reloads in dev
+const globalForEvents = globalThis as unknown as { __evtEmitter?: EventEmitter };
+export const emitter =
+  globalForEvents.__evtEmitter ?? (globalForEvents.__evtEmitter = new EventEmitter());
+
+// Avoid MaxListeners warnings when many SSE clients are connected
+try { emitter.setMaxListeners(0); } catch {}
 
 export function publish(evt: BoardEvent) {
   emitter.emit("evt", evt);

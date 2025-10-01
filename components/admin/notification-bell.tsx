@@ -15,6 +15,9 @@ export default function NotificationBell() {
   const [list, setList] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
   const esRef = useRef<EventSource | null>(null);
+  const retryTimerRef = useRef<any>(null);
+  const attemptsRef = useRef(0);
+  const stoppedRef = useRef(false);
 
   const fetchList = async () => {
     try {
@@ -26,20 +29,48 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchList();
-    try { esRef.current?.close(); } catch {}
-    const es = new EventSource(`/api/events?user=me`, { withCredentials: true } as any);
-    esRef.current = es;
-    es.onmessage = (msg) => {
-      try {
-        const evt = JSON.parse(msg.data);
-        if (evt.type === 'notification' && evt.notification) {
-          setList((prev) => [{ id: evt.notification.id, title: evt.notification.title, message: evt.notification.message, url: evt.notification.url, createdAt: evt.notification.createdAt }, ...prev]);
-          setUnread((u) => u + 1);
-        }
-      } catch {}
+
+    const connect = () => {
+      if (stoppedRef.current) return;
+      try { esRef.current?.close(); } catch {}
+      const es = new EventSource(`/api/events?user=me`, { withCredentials: true } as any);
+      esRef.current = es;
+
+      es.onopen = () => {
+        attemptsRef.current = 0; // reset backoff on successful connection
+      };
+      es.onmessage = (msg) => {
+        try {
+          const evt = JSON.parse(msg.data);
+          if (evt.type === 'notification' && evt.notification) {
+            setList((prev) => [
+              { id: evt.notification.id, title: evt.notification.title, message: evt.notification.message, url: evt.notification.url, createdAt: evt.notification.createdAt },
+              ...prev,
+            ]);
+            setUnread((u) => u + 1);
+          }
+        } catch {}
+      };
+      es.onerror = () => {
+        // Close and reconnect with exponential backoff to avoid tight loops
+        try { es.close(); } catch {}
+        if (stoppedRef.current) return;
+        esRef.current = null;
+        const attempt = Math.min(8, attemptsRef.current + 1);
+        attemptsRef.current = attempt;
+        const delay = Math.min(30000, 1000 * Math.pow(2, attempt - 1));
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(connect, delay);
+      };
     };
-    es.onerror = () => { try { es.close(); } catch {}; esRef.current = null; }
-    return () => { try { es.close(); } catch {}; esRef.current = null; };
+
+    connect();
+    return () => {
+      stoppedRef.current = true;
+      clearTimeout(retryTimerRef.current);
+      try { esRef.current?.close(); } catch {}
+      esRef.current = null;
+    };
   }, []);
 
   const onMarkRead = async (id?: string) => {
