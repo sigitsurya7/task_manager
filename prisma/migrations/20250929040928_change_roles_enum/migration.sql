@@ -5,4 +5,4 @@
 
 */
 -- AlterTable
-ALTER TABLE `user` MODIFY `role` ENUM('ADMIN', 'MEMBER') NOT NULL;
+ALTER TABLE `User` MODIFY `role` ENUM('ADMIN', 'MEMBER') NOT NULL;
