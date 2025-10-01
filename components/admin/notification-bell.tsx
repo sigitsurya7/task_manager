@@ -101,9 +101,13 @@ export default function NotificationBell() {
           <div className="flex items-center justify-between mb-2">
             <span className="font-medium">Notifikasi</span>
             {items.length > 0 && (
-              <Button size="sm" variant="light" onPress={() => onMarkRead()}>
-                Tandai dibaca
-              </Button>
+              unread > 0 ? (
+                <Button size="sm" variant="light" onPress={() => onMarkRead()}>
+                  Tandai dibaca
+                </Button>
+              ) : (
+                <span className="text-tiny text-default-500">Sudah dibaca semua</span>
+              )
             )}
           </div>
           <div className="max-h-80 overflow-auto no-scrollbar flex flex-col gap-1">
@@ -117,7 +121,9 @@ export default function NotificationBell() {
                       Buka
                     </Button>
                   )}
-                  <Button size="sm" variant="flat" onPress={() => onMarkRead(n.id)}>Tandai dibaca</Button>
+                  {!n.readAt && (
+                    <Button size="sm" variant="flat" onPress={() => onMarkRead(n.id)}>Tandai dibaca</Button>
+                  )}
                 </div>
               </div>
             ))}
