@@ -8,12 +8,17 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const slug = searchParams.get("workspace");
-  if (!slug) return NextResponse.json({ message: "workspace required" }, { status: 400 });
+  const userScope = searchParams.get("user");
   const auth = await getAuth();
   if (!auth) return NextResponse.json({ message: "unauthorized" }, { status: 401 });
-
-  const ws = await prisma.workspace.findUnique({ where: { slug }, select: { id: true, members: { where: { userId: String(auth.sub) }, select: { id: true } } } });
-  if (!ws || ws.members.length === 0) return NextResponse.json({ message: "forbidden" }, { status: 403 });
+  let ws: { id: string } | null = null;
+  if (slug) {
+    const found = await prisma.workspace.findUnique({ where: { slug }, select: { id: true, members: { where: { userId: String(auth.sub) }, select: { id: true } } } });
+    if (!found || found.members.length === 0) return NextResponse.json({ message: "forbidden" }, { status: 403 });
+    ws = { id: found.id };
+  } else if (!userScope) {
+    return NextResponse.json({ message: "workspace or user required" }, { status: 400 });
+  }
 
   let hb: any;
   let off: ((evt: any) => void) | null = null;
@@ -30,7 +35,8 @@ export async function GET(req: Request) {
         controller.enqueue(`: keep-alive\n\n`);
       };
       const onEvt = (evt: any) => {
-        if (evt.workspaceId === ws.id) sendData(evt);
+        if (ws && evt.workspaceId === ws.id) sendData(evt);
+        if (userScope && evt.userId === String(auth.sub)) sendData(evt);
       };
       off = onEvt;
       emitter.on("evt", onEvt);

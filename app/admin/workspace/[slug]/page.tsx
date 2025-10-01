@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { toast } from "react-hot-toast";
 import { useBoard } from "@/stores/board";
 import { useWorkspaces } from "@/stores/workspaces";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Avatar } from "@heroui/avatar";
@@ -176,11 +176,23 @@ function AttachmentsSection({ attachments, isViewer, onOpenPreview, onDelete }: 
               };
               return (
                 <tr key={a.id} className="border-t border-default-200">
-                  <td className="px-3 py-2"><button className="text-primary hover:underline" onClick={handleOpen} aria-label={`Open attachment ${a.name}`}>{a.name}</button></td>
+                  <td className="px-3 py-2">
+                    <Button
+                      variant="light"
+                      color="primary"
+                      onPress={handleOpen}
+                      aria-label={`Open attachment ${a.name}`}
+                      title={a.name}
+                    >
+                      <span className="inline-block max-w-[180px] sm:max-w-[260px] truncate align-middle">
+                        {a.name}
+                      </span>
+                    </Button>
+                  </td>
                   <td className="px-3 py-2">{a.type || 'file'}</td>
                   <td className="px-3 py-2 text-right">
                     {!isViewer && (
-                        <Button size="sm" variant="light" color="danger" onPress={()=>onDelete(a.id)} aria-label="Hapus lampiran">Hapus</Button>
+                        <Button size="sm" variant="light" color="danger" onPress={()=>onDelete(a.id)} aria-label="Hapus lampiran" endContent={<FiTrash2 />} />
                     )}
                   </td>
                 </tr>
@@ -195,9 +207,9 @@ function AttachmentsSection({ attachments, isViewer, onOpenPreview, onDelete }: 
 
 function CommentsSection({ me, isViewer, comment, setComment, comments, onSubmit, onDelete, onPasteFile }: { me: any; isViewer: boolean; comment: string; setComment: (v: string) => void; comments: any[]; onSubmit: () => void; onDelete: (id: string) => void; onPasteFile: (f: File) => void }) {
   return (
-    <div>
+    <div className="flex h-full flex-col">
       <ModalHeader className="p-0">Komentar dan aktivitas</ModalHeader>
-      <div className="mt-3 space-y-3">
+      <div className="mt-3 flex-1 flex flex-col gap-3">
         <div className="flex flex-col">
           <Textarea
             placeholder="Tulis komentar..."
@@ -212,7 +224,7 @@ function CommentsSection({ me, isViewer, comment, setComment, comments, onSubmit
             </div>
           )}
         </div>
-        <div className="overflow-y-auto max-h-96 no-scrollbar flex flex-col gap-2">
+        <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-2">
           {comments?.length ? comments.map((c)=> (
             <div key={c.id} className="flex gap-3 items-start rounded-xl border border-default-200 p-3">
               <div className="col-span-1">
@@ -359,48 +371,30 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     return () => { alive = false; };
   }, [task, slug]);
 
-  // Realtime: listen SSE and refresh TaskDetail sections when related events arrive
+  // Realtime via board store: subscribe to task events instead of opening a new SSE
+  const subscribeTask = useBoard((s)=> s.subscribeTask);
   useEffect(() => {
     if (!task) return;
-    let es: EventSource | null = null;
-      const refresh = async () => {
-        try {
-          const [tRes, cRes, aRes, lRes] = await Promise.allSettled([
-            api.get(`/api/tasks/${task.id}`),
-            api.get(`/api/comments?taskId=${task.id}`),
-            api.get(`/api/tasks/${task.id}/attachments`),
-            api.get(`/api/tasks/${task.id}/labels`),
-          ]);
-          if (tRes.status === 'fulfilled') { const d: any = tRes.value; setDesc(d.description || ""); setAssigneesLocal(d.assignees || []); setSelectedMemberIds(new Set((d.assignees||[]).map((a:any)=>a.id))); const toLocal = (s?: string|null)=>{ if(!s) return ""; const dt=new Date(s); const p=(n:number)=>String(n).padStart(2,'0'); return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`; }; setDue(toLocal(d.dueDate)); setStartDate(toLocal(d.startDate)); setStartEnabled(Boolean(d.startDate)); }
-          if (cRes.status === 'fulfilled') { const d: any = cRes.value; setComments(d.comments || []); }
-          if (aRes.status === 'fulfilled') { const d: any = aRes.value; setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'}))); }
-          if (lRes.status === 'fulfilled') { const d: any = lRes.value; setAllLabels(d.labels||[]); }
-        } catch {}
-      };
-    try {
-      es = new EventSource(`/api/events?workspace=${encodeURIComponent(slug)}`, { withCredentials: true } as any);
-      es.onmessage = (msg) => {
-        try {
-          const evt = JSON.parse(msg.data);
-          const isThisTask = evt?.taskId === task.id || evt?.task?.id === task.id;
-          if (evt.type === 'task.deleted' && isThisTask) { onClose(); return; }
-          if (evt.type === 'workspace.members.changed') {
-            (async () => {
-              try {
-                const data = await api.get<{ members?: any[] }>(`/api/workspaces/${slug}/members`);
-                const mem = (data.members||[]).map((m:any)=> ({ ...m.user, role: m.role }));
-                try { __membersCache.set(slug, mem); } catch {}
-                setMembers(mem);
-              } catch {}
-            })();
-            return;
-          }
-          if (isThisTask) { refresh(); }
-        } catch {}
-      };
-    } catch {}
-    return () => { try { es?.close(); } catch {} };
-  }, [task, slug]);
+    const refresh = async () => {
+      try {
+        const [tRes, cRes, aRes, lRes] = await Promise.allSettled([
+          api.get(`/api/tasks/${task.id}`),
+          api.get(`/api/comments?taskId=${task.id}`),
+          api.get(`/api/tasks/${task.id}/attachments`),
+          api.get(`/api/tasks/${task.id}/labels`),
+        ]);
+        if (tRes.status === 'fulfilled') { const d: any = tRes.value; setDesc(d.description || ""); setAssigneesLocal(d.assignees || []); setSelectedMemberIds(new Set((d.assignees||[]).map((a:any)=>a.id))); const toLocal = (s?: string|null)=>{ if(!s) return ""; const dt=new Date(s); const p=(n:number)=>String(n).padStart(2,'0'); return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`; }; setDue(toLocal(d.dueDate)); setStartDate(toLocal(d.startDate)); setStartEnabled(Boolean(d.startDate)); }
+        if (cRes.status === 'fulfilled') { const d: any = cRes.value; setComments(d.comments || []); }
+        if (aRes.status === 'fulfilled') { const d: any = aRes.value; setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'}))); }
+        if (lRes.status === 'fulfilled') { const d: any = lRes.value; setAllLabels(d.labels||[]); }
+      } catch {}
+    };
+    const unsub = subscribeTask(task.id, (evt: any) => {
+      if (evt?.type === 'task.deleted' && (evt.taskId === task.id)) { onClose(); return; }
+      refresh();
+    });
+    return () => { try { unsub(); } catch {} };
+  }, [task, subscribeTask]);
 
   // Control initial state of create-label UI based on whether labels exist
   useEffect(() => {
@@ -526,8 +520,11 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
   const submitComment = async () => {
     if (!comment.trim()) return;
     try {
-      await api.post(`/api/comments`, { taskId: task.id, body: comment });
+      const d = await api.post<{ comment: any }>(`/api/comments`, { taskId: task.id, body: comment });
       setComment("");
+      if (d?.comment) {
+        setComments((arr)=> [{ id: d.comment.id, body: d.comment.body, createdAt: d.comment.createdAt, author: d.comment.author }, ...arr]);
+      }
     } catch {}
   };
   const deleteComment = async (id: string) => {
@@ -572,179 +569,183 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
 
   return (
     <>
-    <div className="grid w-full grid-cols-1 gap-6 p-8 md:grid-cols-[1fr_360px]">
-      <div>
-        <ModalHeader className="flex items-center justify-between gap-3 p-0">
-          {(() => {
-            const acc = columnAccent ?? '';
-            const light = /-100|-200|-300|warning|default/i.test(acc);
-            const text = light ? 'text-black' : 'text-white';
-            return <Chip variant="flat" className={`${acc} ${acc ? text : ''}`}>{columnTitle}</Chip>;
-          })()}
-          {isEditingTitle ? (
-            <div className="flex items-center gap-2">
-              <Input size="sm" variant="bordered" value={titleEdit} onValueChange={setTitleEdit} onKeyDown={(e)=>{ if(e.key==='Enter') saveTitle(); if(e.key==='Escape'){ setIsEditingTitle(false); setTitleEdit(task.title);} }} />
-              <Button size="sm" color="primary" onPress={saveTitle} isDisabled={!titleEdit.trim()} isLoading={savingTitle}>Save</Button>
-              <Button size="sm" variant="light" onPress={()=>{ setIsEditingTitle(false); setTitleEdit(task.title); }}>Cancel</Button>
-            </div>
-          ) : (
-            <h2 className={`text-2xl font-semibold ${!isViewer ? 'cursor-text' : ''}`} onClick={()=>{ if (!isViewer) setIsEditingTitle(true); }}>{task.title}</h2>
-          )}
-
-          {!isViewer && (
-            <Dropdown>
-              <DropdownTrigger>
-                <Button size="sm" isIconOnly variant="light" aria-label="Menu task"><FiMenu /></Button>
-              </DropdownTrigger>
-              <DropdownMenu aria-label="task menu" onAction={(key)=>{ if (key === 'delete') requestDeleteTask(); }}>
-                <DropdownItem key="delete" className="text-danger" color="danger">Delete task</DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
-          )}
-        </ModalHeader>
-            <div className="mt-4 flex flex-wrap gap-2">
-          {!isViewer && <Button size="sm" variant="flat" color="secondary" onPress={() => setChecklistModal(true)}>Daftar Periksa</Button>}
-          {!isViewer && <Button size="sm" variant="flat" color="success" onPress={() => setAttachModal(true)}>Lampiran</Button>}
-          </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div>
-            <p className="text-tiny text-default-500">Anggota</p>
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              {assigneesLocal.map((m) => (
-                <Avatar key={m.id} name={m.name ?? m.username} size="sm" className="ring-2 ring-background" />
-              ))}
-              {!isViewer && (
-                <Button isIconOnly size="sm" variant="light" onPress={() => setMemberModal(true)} aria-label="Manage members">+</Button>
-              )}
-            </div>
-          </div>
-          <div>
-            <p className="text-tiny text-default-500">Label</p>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="flex -space-x-2">
-                {selectedLabels.slice(0,3).map((l) => (
-                  <span key={l.id} className="inline-flex items-center rounded-full bg-primary text-white dark:text-default-700 px-2 py-0.5 text-tiny">
-                    {l.name}
-                  </span>
-                ))}
+    <div className="h-[80dvh] md:h-[85dvh] overflow-hidden">
+      <div className="grid w-full h-full grid-cols-1 gap-4 p-4 md:gap-6 md:p-8 md:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="flex flex-col min-h-0 h-full">
+          <ModalHeader className="flex items-center justify-between gap-3 p-0">
+            {(() => {
+              const acc = columnAccent ?? '';
+              const light = /-100|-200|-300|warning|default/i.test(acc);
+              const text = light ? 'text-black' : 'text-white';
+              return <Chip variant="flat" className={`${acc} ${acc ? text : ''}`}>{columnTitle}</Chip>;
+            })()}
+            {isEditingTitle ? (
+              <div className="flex items-center gap-2">
+                <Input size="sm" variant="bordered" value={titleEdit} onValueChange={setTitleEdit} onKeyDown={(e)=>{ if(e.key==='Enter') saveTitle(); if(e.key==='Escape'){ setIsEditingTitle(false); setTitleEdit(task.title);} }} />
+                <Button size="sm" color="primary" onPress={saveTitle} isDisabled={!titleEdit.trim()} isLoading={savingTitle}>Save</Button>
+                <Button size="sm" variant="light" onPress={()=>{ setIsEditingTitle(false); setTitleEdit(task.title); }}>Cancel</Button>
               </div>
-              {!isViewer && <Button isIconOnly size="sm" variant="light" onPress={()=>setLabelModal(true)} aria-label="Manage labels">+</Button>}
+            ) : (
+              <h2 className={`text-2xl font-semibold ${!isViewer ? 'cursor-text' : ''}`} onClick={()=>{ if (!isViewer) setIsEditingTitle(true); }}>{task.title}</h2>
+            )}
+
+            {!isViewer && (
+              <Dropdown>
+                <DropdownTrigger>
+                  <Button size="sm" isIconOnly variant="light" aria-label="Menu task"><FiMenu /></Button>
+                </DropdownTrigger>
+                <DropdownMenu aria-label="task menu" onAction={(key)=>{ if (key === 'delete') requestDeleteTask(); }}>
+                  <DropdownItem key="delete" className="text-danger" color="danger">Delete task</DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
+            )}
+          </ModalHeader>
+          <div className="mt-4 flex flex-wrap gap-2 overflow-x-auto no-scrollbar">
+            {!isViewer && <Button size="sm" variant="flat" color="secondary" onPress={() => setChecklistModal(true)}>Daftar Periksa</Button>}
+            {!isViewer && <Button size="sm" variant="flat" color="success" onPress={() => setAttachModal(true)}>Lampiran</Button>}
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-tiny text-default-500">Anggota</p>
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                {assigneesLocal.map((m) => (
+                  <Avatar key={m.id} name={m.name ?? m.username} size="sm" className="ring-2 ring-background" />
+                ))}
+                {!isViewer && (
+                  <Button isIconOnly size="sm" variant="light" onPress={() => setMemberModal(true)} aria-label="Manage members">+</Button>
+                )}
+              </div>
+            </div>
+            <div>
+              <p className="text-tiny text-default-500">Label</p>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="flex -space-x-2">
+                  {selectedLabels.slice(0,3).map((l) => (
+                    <span key={l.id} className="inline-flex items-center rounded-full bg-primary text-white dark:text-default-700 px-2 py-0.5 text-tiny">
+                      {l.name}
+                    </span>
+                  ))}
+                </div>
+                {!isViewer && <Button isIconOnly size="sm" variant="light" onPress={()=>setLabelModal(true)} aria-label="Manage labels">+</Button>}
+              </div>
+            </div>
+            <div>
+              <p className="text-tiny text-default-500">Batas waktu</p>
+              <div className="mt-2">
+                {(() => {
+                  const display = due ? new Date(due).toLocaleString() : (task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Set dates');
+                  return <Button variant="bordered" size="sm" onPress={()=>setDateModal(true)} disabled={isViewer}>{display}</Button>;
+                })()}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-tiny text-default-500">Batas waktu</p>
-            <div className="mt-2">
-              {(() => {
-                const display = due ? new Date(due).toLocaleString() : (task.dueDate ? new Date(task.dueDate).toLocaleString() : 'Set dates');
-                return <Button variant="bordered" size="sm" onPress={()=>setDateModal(true)} disabled={isViewer}>{display}</Button>;
-              })()}
-            </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar pr-2">
+            <DescriptionSection desc={desc} setDesc={setDesc} isViewer={isViewer} onSave={saveDesc} saving={savingDesc} />
+
+            {/* Checklist groups */}
+            {checklists.map((g) => {
+              const total = g.items.length || 1;
+              const done = g.items.filter((i) => i.done).length;
+              const percent = Math.round((done / total) * 100);
+              return (
+                <div key={g.id} className="mt-6 border border-default-200 rounded-xl p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium">{g.title}</p>
+                    {!isViewer && <Button size="sm" variant="light" color="danger" onPress={() => {
+                      setConfirm({
+                        open: true,
+                        title: 'Hapus checklist?',
+                        message: 'Tindakan ini tidak dapat dibatalkan.',
+                        onConfirm: async () => {
+                          try { await api.del(`/api/checklists/${g.id}`); toast.success('Checklist dihapus'); } catch { toast.error('Gagal menghapus'); }
+                          setChecklists((arr)=>arr.filter((x)=>x.id!==g.id));
+                        }
+                      });
+                    }} endContent={<FiTrash2 />} />}
+                  </div>
+                  <div className="mt-2">
+                    <Progress aria-label="progress" value={percent} className="max-w-full" />
+                  </div>
+                  {!isViewer && (
+                    <div className="mt-2">
+                      <Input
+                        variant="bordered"
+                        placeholder="Add an item"
+                        value={newItem[g.id] || ""}
+                        onValueChange={(val)=>setNewItem((m)=>({ ...m, [g.id]: val }))}
+                      />
+                      <div className="flex items-center gap-3 mt-2">
+                        <Button size="sm" color="primary" onPress={()=>addChecklistItem(g.id)} startContent={<FiPlus />}>Add</Button>
+                        <Button size="sm" variant="light" onPress={()=>setNewItem((m)=>({ ...m, [g.id]: "" }))}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-3 space-y-2">
+                    {g.items.map((c) => (
+                      <label key={c.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox size="sm" isSelected={c.done} onValueChange={async (checked)=>{
+                          setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, done:checked}:it)}:gr));
+                          try { await api.patch(`/api/checklist-items/${c.id}`, { done: checked }); } catch {}
+                        }} isDisabled={isViewer} />
+                        <div className="flex-1">
+                          <Input
+                            variant="bordered"
+                            size="sm"
+                            value={c.title}
+                            isReadOnly={isViewer}
+                            onValueChange={(val)=>{
+                              setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, title:val}:it)}:gr));
+                              try { clearTimeout(itemTimers.current[c.id]); } catch {}
+                              itemTimers.current[c.id] = setTimeout(async ()=>{
+                                try { await api.patch(`/api/checklist-items/${c.id}`, { title: val }); } catch {}
+                              }, 500);
+                            }}
+                            onBlur={async ()=>{ try { clearTimeout(itemTimers.current[c.id]); await api.patch(`/api/checklist-items/${c.id}`, { title: c.title }); } catch {} }}
+                          />
+                        </div>
+                        {!isViewer && (
+                          <Button size="sm" variant="light" color="danger" onPress={() => {
+                            setConfirm({
+                              open: true,
+                              title: 'Hapus item checklist?',
+                              message: 'Item akan dihapus permanen.',
+                              onConfirm: async () => {
+                                try { await api.del(`/api/checklist-items/${c.id}`); toast.success('Item dihapus'); } catch { toast.error('Gagal menghapus'); }
+                                setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.filter(it=>it.id!==c.id)}:gr));
+                              }
+                            });
+                          }} endContent={<FiTrash2 />} />
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            <AttachmentsSection
+              attachments={attachments}
+              isViewer={isViewer}
+              onOpenPreview={(a)=>{ const isImage = a.type?.startsWith('image/'); const isPdf = a.type==='application/pdf'||(a.url||'').toLowerCase().endsWith('.pdf'); if (isImage||isPdf) setPreview({ open: true, att: a }); else window.open(a.url, '_blank', 'noopener,noreferrer'); }}
+              onDelete={(id)=> setConfirm({ open:true, title:'Hapus lampiran?', message:'File/link akan dihapus dari task ini.', onConfirm: async ()=>{ try { await deleteAttachment(id); toast.success('Lampiran dihapus'); } catch { toast.error('Gagal menghapus'); } } })}
+            />
           </div>
         </div>
 
-        <DescriptionSection desc={desc} setDesc={setDesc} isViewer={isViewer} onSave={saveDesc} saving={savingDesc} />
-
-        {/* Checklist groups */}
-        {checklists.map((g) => {
-          const total = g.items.length || 1;
-          const done = g.items.filter((i) => i.done).length;
-          const percent = Math.round((done / total) * 100);
-          return (
-            <div key={g.id} className="mt-6 border border-default-200 rounded-xl p-3">
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{g.title}</p>
-                {!isViewer && <Button size="sm" variant="light" color="danger" onPress={() => {
-                  setConfirm({
-                    open: true,
-                    title: 'Hapus checklist?',
-                    message: 'Tindakan ini tidak dapat dibatalkan.',
-                    onConfirm: async () => {
-                      try { await api.del(`/api/checklists/${g.id}`); toast.success('Checklist dihapus'); } catch { toast.error('Gagal menghapus'); }
-                      setChecklists((arr)=>arr.filter((x)=>x.id!==g.id));
-                    }
-                  });
-                }}>Hapus</Button>}
-              </div>
-              <div className="mt-2">
-                <Progress aria-label="progress" value={percent} className="max-w-full" />
-              </div>
-              {!isViewer && (
-                <div className="mt-2">
-                  <Input
-                    variant="bordered"
-                    placeholder="Add an item"
-                    value={newItem[g.id] || ""}
-                    onValueChange={(val)=>setNewItem((m)=>({ ...m, [g.id]: val }))}
-                  />
-                  <div className="flex items-center gap-3 mt-2">
-                    <Button size="sm" color="primary" onPress={()=>addChecklistItem(g.id)} startContent={<FiPlus />}>Add</Button>
-                    <Button size="sm" variant="light" onPress={()=>setNewItem((m)=>({ ...m, [g.id]: "" }))}>Cancel</Button>
-                  </div>
-                </div>
-              )}
-              <div className="mt-3 space-y-2">
-                {g.items.map((c) => (
-                  <label key={c.id} className="flex items-center gap-2 text-sm">
-                    <Checkbox size="sm" isSelected={c.done} onValueChange={async (checked)=>{
-                      setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, done:checked}:it)}:gr));
-                      try { await api.patch(`/api/checklist-items/${c.id}`, { done: checked }); } catch {}
-                    }} isDisabled={isViewer} />
-                    <div className="flex-1">
-                      <Input
-                        variant="bordered"
-                        size="sm"
-                        value={c.title}
-                        isReadOnly={isViewer}
-                        onValueChange={(val)=>{
-                          setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.map(it=>it.id===c.id?{...it, title:val}:it)}:gr));
-                          try { clearTimeout(itemTimers.current[c.id]); } catch {}
-                          itemTimers.current[c.id] = setTimeout(async ()=>{
-                            try { await api.patch(`/api/checklist-items/${c.id}`, { title: val }); } catch {}
-                          }, 500);
-                        }}
-                        onBlur={async ()=>{ try { clearTimeout(itemTimers.current[c.id]); await api.patch(`/api/checklist-items/${c.id}`, { title: c.title }); } catch {} }}
-                      />
-                    </div>
-                    {!isViewer && (
-                      <Button size="sm" variant="light" color="danger" onPress={() => {
-                        setConfirm({
-                          open: true,
-                          title: 'Hapus item checklist?',
-                          message: 'Item akan dihapus permanen.',
-                          onConfirm: async () => {
-                            try { await api.del(`/api/checklist-items/${c.id}`); toast.success('Item dihapus'); } catch { toast.error('Gagal menghapus'); }
-                            setChecklists((arr)=>arr.map(gr=>gr.id===g.id?{...gr, items: gr.items.filter(it=>it.id!==c.id)}:gr));
-                          }
-                        });
-                      }}>Hapus</Button>
-                    )}
-                  </label>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-
-        <AttachmentsSection
-          attachments={attachments}
-          isViewer={isViewer}
-          onOpenPreview={(a)=>{ const isImage = a.type?.startsWith('image/'); const isPdf = a.type==='application/pdf'||(a.url||'').toLowerCase().endsWith('.pdf'); if (isImage||isPdf) setPreview({ open: true, att: a }); else window.open(a.url, '_blank', 'noopener,noreferrer'); }}
-          onDelete={(id)=> setConfirm({ open:true, title:'Hapus lampiran?', message:'File/link akan dihapus dari task ini.', onConfirm: async ()=>{ try { await deleteAttachment(id); toast.success('Lampiran dihapus'); } catch { toast.error('Gagal menghapus'); } } })}
-        />
-      </div>
-
-      <div>
-        <CommentsSection
-          me={me}
-          isViewer={isViewer}
-          comment={comment}
-          setComment={setComment}
-          comments={comments}
-          onSubmit={async ()=>{ await submitComment(); /* SSE will refresh comments */ }}
-          onDelete={deleteComment}
-          onPasteFile={(f)=>addAttachmentFile(f)}
-        />
+      <div className="md:pr-4 flex min-h-0 h-full flex-col">
+          <CommentsSection
+            me={me}
+            isViewer={isViewer}
+            comment={comment}
+            setComment={setComment}
+            comments={comments}
+            onSubmit={async ()=>{ await submitComment(); /* SSE will refresh comments */ }}
+            onDelete={deleteComment}
+            onPasteFile={(f)=>addAttachmentFile(f)}
+          />
+        </div>
       </div>
     </div>
 
@@ -1120,8 +1121,33 @@ export default function WorkspaceBoardPage() {
 
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<{ task: Task; column: { title: string; accent?: string | null } } | null>(null);
+  const searchParams = useSearchParams();
   const openTask = (task: Task, col: ColumnData) => { setSelected({ task, column: { title: col.title, accent: col.accent ?? null } }); setOpen(true); };
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Open TaskDetail once via query parameter ?task=ID, then strip query so it doesn't reopen
+  const didAutoOpenRef = useRef(false);
+  useEffect(() => {
+    if (didAutoOpenRef.current) return;
+    const id = searchParams?.get('task');
+    if (!id) return;
+    const key = `openedTask:${slug}:${id}`;
+    try {
+      if (typeof window !== 'undefined' && sessionStorage.getItem(key) === '1') {
+        // already opened once in this session; clean URL and bail out
+        try { router.replace(`/admin/workspace/${slug}`, { scroll: false }); } catch {}
+        return;
+      }
+    } catch {}
+    // wait until columns loaded and task present
+    const t = columns.flatMap(c => c.tasks.map(task => ({ task, col: c }))).find(x => x.task.id === id);
+    if (!t) return;
+    setSelected({ task: t.task as any, column: { title: t.col.title, accent: t.col.accent ?? null } });
+    setOpen(true);
+    didAutoOpenRef.current = true;
+    try { if (typeof window !== 'undefined') sessionStorage.setItem(key, '1'); } catch {}
+    try { router.replace(`/admin/workspace/${slug}`, { scroll: false }); } catch {}
+  }, [searchParams, columns, slug, router]);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
   const [userQuery, setUserQuery] = useState("");
   const [availableUsers, setAvailableUsers] = useState<{ id: string; username: string; name: string | null; role?: string }[]>([]);
@@ -1350,7 +1376,7 @@ export default function WorkspaceBoardPage() {
         </div>
       )}
 
-      <Modal isOpen={open} onOpenChange={setOpen} size="5xl">
+      <Modal isOpen={open} onOpenChange={setOpen} scrollBehavior={'inside'} size="5xl">
         <ModalContent>
           {() => (
             <TaskDetail

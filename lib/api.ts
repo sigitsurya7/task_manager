@@ -33,6 +33,14 @@ async function request<T = any>(input: RequestInfo | URL, init: ApiInit = {}): P
     ...rest,
   });
 
+  if (res.status === 401) {
+    try {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    } catch {}
+  }
+
   if (!res.ok) {
     const data: any = await parseJSON(res);
     const msg = data?.message || data?.error || res.statusText || 'Request failed';

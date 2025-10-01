@@ -34,6 +34,19 @@ export async function POST(req: Request, context: any) {
     update: { role },
   });
   publish({ type: "workspace.members.changed", workspaceId: ws.id });
+  // Create ephemeral notification for the added user
+  try {
+    const notif = await prisma.notification.create({
+      data: {
+        userId: user.id,
+        kind: 'workspace_added',
+        title: 'Ditambahkan ke workspace',
+        message: ws.name,
+        url: `/admin/workspace/${ws.slug}`,
+      },
+    });
+    publish({ type: 'notification', userId: user.id, notification: { id: notif.id, title: notif.title, message: notif.message ?? undefined, url: notif.url ?? undefined, createdAt: notif.createdAt.toISOString() } });
+  } catch {}
   try { publish({ type: "workspaces.changed", userId: user.id }); } catch {}
   return NextResponse.json({ member: { id: mem.id, role: mem.role, user: { id: user.id, email: user.email, username: user.username, name: user.name } } });
 }

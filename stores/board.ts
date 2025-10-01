@@ -32,6 +32,10 @@ type State = {
   moveTask: (taskId: string, toColumnId: string, position: number) => Promise<void>;
   connectSSE: () => void;
   replaceColumns: (cols: BoardColumn[]) => void;
+  // task-level event subscriptions for TaskDetail
+  taskSubs: Record<string, Set<(evt: any) => void>>;
+  subscribeTask: (taskId: string, fn: (evt: any) => void) => () => void;
+  notifyTask: (taskId: string, evt: any) => void;
 };
 
 export const useBoard = create<State>((set, get) => ({
@@ -40,6 +44,30 @@ export const useBoard = create<State>((set, get) => ({
   workspaceRole: null,
   columns: [],
   loading: false,
+  taskSubs: {},
+  subscribeTask: (taskId, fn) => {
+    const subs = { ...get().taskSubs };
+    if (!subs[taskId]) subs[taskId] = new Set();
+    subs[taskId].add(fn);
+    set({ taskSubs: subs });
+    return () => {
+      const cur = get().taskSubs;
+      if (cur[taskId]) {
+        cur[taskId].delete(fn);
+        if (cur[taskId].size === 0) delete cur[taskId];
+        set({ taskSubs: { ...cur } });
+      }
+    };
+  },
+  notifyTask: (taskId, evt) => {
+    const subs = get().taskSubs;
+    const setSubs = subs[taskId];
+    if (setSubs) {
+      setSubs.forEach((fn) => {
+        try { fn(evt); } catch {}
+      });
+    }
+  },
   replaceColumns: (cols) => set({ columns: cols }),
   load: async (slug) => {
     set({ loading: true });
@@ -117,6 +145,7 @@ export const useBoard = create<State>((set, get) => ({
                   ),
                 })),
               }));
+              get().notifyTask(data.id, { type: 'task.updated', task: { id: data.id } });
             } catch {
               // fallback: apply any partial payload updates
               set((s) => ({
@@ -125,8 +154,12 @@ export const useBoard = create<State>((set, get) => ({
                   tasks: c.tasks.map((t) => (t.id === evt.task.id ? { ...t, title: evt.task.title ?? t.title, progress: typeof evt.task.progress === 'number' ? evt.task.progress : t.progress, dueDate: typeof evt.task.dueDate !== 'undefined' ? evt.task.dueDate : t.dueDate } : t)),
                 })),
               }));
+              get().notifyTask(evt.task.id, evt);
             }
           })();
+        }
+        if (evt.type === 'comment.created' && evt.taskId) {
+          get().notifyTask(evt.taskId, evt);
         }
         if (evt.type === "task.moved") {
           set((s) => {
@@ -170,6 +203,7 @@ export const useBoard = create<State>((set, get) => ({
           set((s) => ({
             columns: s.columns.map((c) => ({ ...c, tasks: c.tasks.filter((t) => t.id !== evt.taskId) })),
           }));
+          get().notifyTask(evt.taskId, evt);
         }
       } catch {}
     };

@@ -18,6 +18,19 @@ export async function POST(req: Request, context: any) {
   if (!target) return NextResponse.json({ message: "user not in workspace" }, { status: 400 });
   await prisma.taskAssignee.upsert({ where: { taskId_userId: { taskId: params.id, userId } }, create: { taskId: params.id, userId }, update: {} });
   publish({ type: "task.updated", workspaceId: ws.id, task: { id: task.id } as any });
+  // notify assignee
+  try {
+    const notif = await prisma.notification.create({
+      data: {
+        userId,
+        kind: 'task_assigned',
+        title: 'Ditugaskan ke tugas',
+        message: task.title,
+        url: `/admin/workspace/${task.project.workspace.slug}?task=${task.id}`,
+      },
+    });
+    publish({ type: 'notification', userId, notification: { id: notif.id, title: notif.title, message: notif.message ?? undefined, url: notif.url ?? undefined, createdAt: notif.createdAt.toISOString() } });
+  } catch {}
   return NextResponse.json({ ok: true });
 }
 

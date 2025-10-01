@@ -1,5 +1,6 @@
 import AdminSidebar from "@/components/admin/sidebar";
 import { AdminMobileMenu } from "@/components/admin/mobile-menu";
+import NotificationBell from "@/components/admin/notification-bell";
 
 export default function AdminLayout({
   children,
@@ -17,6 +18,9 @@ export default function AdminLayout({
         </div>
         {children}
       </section>
+
+      {/* Notifikasi realtime */}
+      <NotificationBell />
     </div>
   );
 }

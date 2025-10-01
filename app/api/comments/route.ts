@@ -28,7 +28,19 @@ export async function POST(req: Request) {
   const membership = await prisma.workspaceMember.findFirst({ where: { workspaceId: wsId, userId: String(auth.sub) } });
   if (!membership) return NextResponse.json({ message: "forbidden" }, { status: 403 });
 
-  const comment = await prisma.comment.create({ data: { taskId, authorId: String(auth.sub), body } });
-  publish({ type: "comment.created", workspaceId: wsId, taskId, commentId: comment.id });
-  return NextResponse.json({ comment });
+  const base = await prisma.comment.create({ data: { taskId, authorId: String(auth.sub), body } });
+  const comment = await prisma.comment.findUnique({ where: { id: base.id }, include: { author: { select: { id: true, username: true, name: true } } } });
+  publish({ type: "comment.created", workspaceId: wsId, taskId, commentId: comment!.id });
+  // Notify assignees except author
+  try {
+    const assignees = await prisma.taskAssignee.findMany({ where: { taskId }, select: { userId: true } });
+    const task = await prisma.task.findUnique({ where: { id: taskId }, include: { project: { include: { workspace: true } } } });
+    const url = task ? `/admin/workspace/${task.project.workspace.slug}?task=${task.id}` : undefined;
+    for (const a of assignees) {
+      if (a.userId === String(auth.sub)) continue;
+      const notif = await prisma.notification.create({ data: { userId: a.userId, kind: 'comment', title: 'Komentar baru', message: body.slice(0, 80), url } });
+      publish({ type: 'notification', userId: a.userId, notification: { id: notif.id, title: notif.title, message: notif.message ?? undefined, url: notif.url ?? undefined, createdAt: notif.createdAt.toISOString() } });
+    }
+  } catch {}
+  return NextResponse.json({ comment: { id: comment!.id, body: comment!.body, createdAt: comment!.createdAt, author: { id: comment!.author.id, username: comment!.author.username, name: comment!.author.name } } });
 }

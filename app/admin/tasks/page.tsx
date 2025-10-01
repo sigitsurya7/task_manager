@@ -73,7 +73,7 @@ export default function MyTasksPage() {
               <TableCell>{r.column}</TableCell>
               <TableCell>{fmt(r.dueDate)}</TableCell>
               <TableCell>
-                <Button isIconOnly size="sm" variant="flat" aria-label="Buka workspace" onPress={() => router.push(`/admin/workspace/${r.workspace.slug}`)}>
+                <Button isIconOnly size="sm" variant="flat" aria-label="Buka workspace" onPress={() => router.push(`/admin/workspace/${r.workspace.slug}?task=${r.id}`)}>
                   <FiFolder />
                 </Button>
               </TableCell>

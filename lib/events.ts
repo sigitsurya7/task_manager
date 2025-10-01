@@ -8,7 +8,8 @@ export type BoardEvent =
   | { type: "task.deleted"; workspaceId: string; taskId: string }
   | { type: "workspace.members.changed"; workspaceId: string }
   // user-scoped events
-  | { type: "workspaces.changed"; userId: string };
+  | { type: "workspaces.changed"; userId: string }
+  | { type: "notification"; userId: string; notification: { id: string; title: string; message?: string; url?: string; createdAt: string } };
 
 export const emitter = new EventEmitter();
 
