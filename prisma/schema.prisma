@@ -1,5 +1,7 @@
 generator client {
   provider = "prisma-client-js"
+  // Include Linux target so generated client runs on Ubuntu (OpenSSL 3)
+  binaryTargets = ["native", "linux-openssl-3.0.x"]
 }
 
 datasource db {
