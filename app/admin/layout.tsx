@@ -1,6 +1,8 @@
 import AdminSidebar from "@/components/admin/sidebar";
 import { AdminMobileMenu } from "@/components/admin/mobile-menu";
 import NotificationBell from "@/components/admin/notification-bell";
+import { RegisterSW } from "@/components/pwa/register-sw";
+import InstallButton from "@/components/pwa/install-button";
 
 export default function AdminLayout({
   children,
@@ -9,6 +11,7 @@ export default function AdminLayout({
 }) {
   return (
     <div className="flex gap-6">
+      <RegisterSW />
       <div className="sticky hidden h-[calc(100vh-6rem)] md:block">
         <AdminSidebar />
       </div>
@@ -19,8 +22,9 @@ export default function AdminLayout({
         {children}
       </section>
 
-      {/* Notifikasi realtime */}
+      {/* Notifikasi realtime & tombol instal PWA */}
       <NotificationBell />
+      <InstallButton />
     </div>
   );
 }

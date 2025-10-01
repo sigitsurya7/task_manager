@@ -1125,29 +1125,17 @@ export default function WorkspaceBoardPage() {
   const openTask = (task: Task, col: ColumnData) => { setSelected({ task, column: { title: col.title, accent: col.accent ?? null } }); setOpen(true); };
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Open TaskDetail once via query parameter ?task=ID, then strip query so it doesn't reopen
-  const didAutoOpenRef = useRef(false);
+  // Open TaskDetail by query parameter ?task=ID
   useEffect(() => {
-    if (didAutoOpenRef.current) return;
     const id = searchParams?.get('task');
     if (!id) return;
-    const key = `openedTask:${slug}:${id}`;
-    try {
-      if (typeof window !== 'undefined' && sessionStorage.getItem(key) === '1') {
-        // already opened once in this session; clean URL and bail out
-        try { router.replace(`/admin/workspace/${slug}`, { scroll: false }); } catch {}
-        return;
-      }
-    } catch {}
-    // wait until columns loaded and task present
+    // wait until columns loaded
     const t = columns.flatMap(c => c.tasks.map(task => ({ task, col: c }))).find(x => x.task.id === id);
-    if (!t) return;
-    setSelected({ task: t.task as any, column: { title: t.col.title, accent: t.col.accent ?? null } });
-    setOpen(true);
-    didAutoOpenRef.current = true;
-    try { if (typeof window !== 'undefined') sessionStorage.setItem(key, '1'); } catch {}
-    try { router.replace(`/admin/workspace/${slug}`, { scroll: false }); } catch {}
-  }, [searchParams, columns, slug, router]);
+    if (t) {
+      setSelected({ task: t.task as any, column: { title: t.col.title, accent: t.col.accent ?? null } });
+      setOpen(true);
+    }
+  }, [searchParams, columns]);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
   const [userQuery, setUserQuery] = useState("");
   const [availableUsers, setAvailableUsers] = useState<{ id: string; username: string; name: string | null; role?: string }[]>([]);
@@ -1195,7 +1183,22 @@ export default function WorkspaceBoardPage() {
               <SelectItem key="table" startContent={<FiTable />}>Tabel</SelectItem>
               <SelectItem key="report" startContent={<FiFile />}>Laporan</SelectItem>
             </Select>
+            
           </div>
+
+          {viewMode === 'list' && (
+            <div className="mt-2">
+              <Input
+                size="sm"
+                placeholder="Cari Task"
+                startContent={<FiSearch />}
+                variant="bordered"
+                value={listQuery}
+                onValueChange={setListQuery}
+              />
+            </div>
+          )}
+
         </div>
         <div className="hidden sm:flex items-center gap-2">
           {workspaceRole === "ADMIN" && (
@@ -1209,16 +1212,6 @@ export default function WorkspaceBoardPage() {
 
       {viewMode === 'list' ? (
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto no-scrollbar pb-8">
-        <div className="px-2 sm:px-0 pb-2">
-          <Input
-            placeholder="Cari Task"
-            startContent={<FiSearch />}
-            variant="bordered"
-            value={listQuery}
-            onValueChange={setListQuery}
-            className="max-w-sm"
-          />
-        </div>
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
             <div className="flex h-full min-w-full gap-4 pb-2 pr-2">
               {listFilteredColumns.map((col) => (

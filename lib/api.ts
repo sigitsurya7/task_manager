@@ -28,6 +28,7 @@ async function request<T = any>(input: RequestInfo | URL, init: ApiInit = {}): P
 
   const res = await fetch(input, {
     credentials: credentials ?? 'include',
+    cache: 'no-store',
     headers: finalHeaders,
     body: finalBody,
     ...rest,
