@@ -27,6 +27,7 @@ type State = {
   columns: BoardColumn[];
   loading: boolean;
   es?: EventSource | null;
+  loadAbort?: AbortController | null;
   load: (slug: string) => Promise<void>;
   addTask: (columnId: string, title: string) => Promise<void>;
   moveTask: (taskId: string, toColumnId: string, position: number) => Promise<void>;
@@ -44,6 +45,7 @@ export const useBoard = create<State>((set, get) => ({
   workspaceRole: null,
   columns: [],
   loading: false,
+  loadAbort: null,
   taskSubs: {},
   subscribeTask: (taskId, fn) => {
     const subs = { ...get().taskSubs };
@@ -70,15 +72,21 @@ export const useBoard = create<State>((set, get) => ({
   },
   replaceColumns: (cols) => set({ columns: cols }),
   load: async (slug) => {
-    set({ loading: true });
+    // Abort any previous in-flight load
+    try { get().loadAbort?.abort(); } catch {}
+    const ctr = new AbortController();
+    set({ loading: true, loadAbort: ctr });
     try {
-      const { data } = await api.get(`/api/board/${slug}`);
+      const { data } = await api.get(`/api/board/${slug}`, { signal: ctr.signal } as any);
       set({ workspaceSlug: slug, boardId: data.board.id, columns: data.columns, workspaceRole: data.workspace?.role ?? null });
       get().connectSSE();
     } catch (e: any) {
-      toast.error(e?.response?.data?.message ?? "Gagal memuat board");
+      // Ignore abort errors; surface other errors
+      if (e?.name !== 'CanceledError' && e?.message !== 'canceled') {
+        toast.error(e?.response?.data?.message ?? "Gagal memuat board");
+      }
     } finally {
-      set({ loading: false });
+      set({ loading: false, loadAbort: null });
     }
   },
   addTask: async (columnId, title) => {

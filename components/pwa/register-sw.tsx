@@ -3,22 +3,22 @@
 import { useEffect } from "react";
 
 export function RegisterSW() {
+  // No-op registration; additionally, proactively unregister any existing SW
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (process.env.NODE_ENV !== "production") return;
     if ("serviceWorker" in navigator) {
-      const controller = new AbortController();
-      const register = async () => {
+      (async () => {
         try {
-          await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-        } catch {
-          // ignore
-        }
-      };
-      register();
-      return () => controller.abort();
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((r) => r.unregister().catch(() => undefined)));
+        } catch {}
+        try {
+          // Clear only our app caches (tm-cache-*) left by previous SW versions
+          const keys = await caches.keys();
+          await Promise.all(keys.filter((k) => k.startsWith("tm-cache-")).map((k) => caches.delete(k)));
+        } catch {}
+      })();
     }
   }, []);
   return null;
 }
-

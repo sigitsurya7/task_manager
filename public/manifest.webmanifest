@@ -1,12 +1,12 @@
 {
-  "name": "Task Manager",
-  "short_name": "Tasks",
+  "name": "OjoLilo",
+  "short_name": "OL",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0ea5e9",
   "scope": "/",
-  "description": "Kelola tugas dan workspace Anda secara efisien.",
+  "description": "Rencana Jadi Nyata.",
   "icons": [
     {
       "src": "/icons/icon-192.png",

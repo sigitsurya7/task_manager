@@ -5,7 +5,7 @@ import { Link } from "@heroui/link";
 import { Button } from "@heroui/button";
 import { Avatar } from "@heroui/avatar";
 import { Divider } from "@heroui/divider";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
 import { ThemeSwitch } from "../theme-switch";
 import { FiLayout, FiUsers, FiCheckSquare, FiZap, FiChevronLeft, FiChevronRight, FiPlus, FiSettings, FiShield, FiUserCheck, FiSmartphone, FiShoppingCart, FiTrendingUp, FiActivity, FiAirplay, FiAperture, FiArchive, FiBarChart2, FiBook, FiBriefcase, FiCalendar, FiCamera, FiCode, FiDatabase, FiFeather, FiFileText, FiFolder, FiGlobe, FiGrid, FiHeart, FiHome, FiInbox, FiLayers, FiMail, FiMap, FiMonitor, FiPackage, FiPaperclip, FiPieChart, FiServer, FiTarget, FiTool, FiLogOut } from "react-icons/fi";
@@ -68,6 +68,7 @@ const iconOptions = Object.keys(iconMap);
 
 export default function AdminSidebar({ variant = "default" }: { variant?: "default" | "mobile" }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
 
   const { items, fetch, connectSSE } = useWorkspaces();
@@ -77,6 +78,14 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
   const workspaces = useMemo<Item[]>(() =>
     items.map((w) => ({ label: w.name, href: `/admin/workspace/${w.slug}`, icon: iconMap[w.iconKey || "FiZap"] })),
   [items]);
+
+  // Prefetch target pages to make navigation snappier
+  useEffect(() => {
+    try {
+      menuItems.forEach((m) => router.prefetch(m.href));
+      workspaces.slice(0, 10).forEach((w) => router.prefetch(w.href));
+    } catch {}
+  }, [router, workspaces]);
 
   // current user + role summary
   const [me, setMe] = useState<{ username: string; name?: string; role?: string } | null>(null);

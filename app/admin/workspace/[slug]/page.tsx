@@ -297,6 +297,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
   useEffect(() => {
     if (!task) return;
     setLoading(true);
+    const ctr = new AbortController();
     const toLocalInput = (dateStr?: string | null) => {
       if (!dateStr) return "";
       const d = new Date(dateStr);
@@ -357,18 +358,18 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
     })();
     (async () => {
       try {
-        const d = await api.get<{ attachments?: any[] }>(`/api/tasks/${task.id}/attachments`);
+        const d = await api.get<{ attachments?: any[] }>(`/api/tasks/${task.id}/attachments`, { signal: ctr.signal } as any);
         if (alive) setAttachments((d.attachments||[]).map((a:any)=>({id:a.id,name:a.name,url:a.url,type:a.type||'file'})));
       } catch {}
     })();
     (async () => {
       try {
-        const d = await api.get<{ comments?: any[] }>(`/api/comments?taskId=${task.id}`);
+        const d = await api.get<{ comments?: any[] }>(`/api/comments?taskId=${task.id}`, { signal: ctr.signal } as any);
         if (alive) setComments(d.comments || []);
       } catch { if (alive) setComments([]); }
     })();
 
-    return () => { alive = false; };
+    return () => { alive = false; try { ctr.abort(); } catch {} };
   }, [task, slug]);
 
   // Realtime via board store: subscribe to task events instead of opening a new SSE
@@ -993,6 +994,13 @@ export default function WorkspaceBoardPage() {
       load(slug);
     }
   }, [slug, load]);
+
+  // Abort any in-flight board load when leaving this page
+  useEffect(() => {
+    return () => {
+      try { (useBoard as any).getState?.().loadAbort?.abort(); } catch {}
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentWorkspace) {
