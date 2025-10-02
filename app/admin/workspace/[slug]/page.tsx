@@ -1172,16 +1172,15 @@ export default function WorkspaceBoardPage() {
 
   return (
     <div className="flex h-[calc(100dvh-64px-48px)] min-h-0 flex-col overflow-x-hidden">
-      <header className="flex items-center justify-between py-2 px-2 sm:px-0">
-        <div className="flex flex-row gap-5">
-          <div>
+      <header className="flex flex-wrap-reverse gap-2 items-center justify-between py-2 px-2 sm:px-0">
+        <div className="flex flex-row items-center gap-5">
+          <div className="hidden md:block">
             <p className="text-tiny text-default-500">Workspace / {currentWorkspace?.name ?? slug}</p>
             <h1 className="text-2xl font-semibold">{currentWorkspace?.name ?? slug}</h1>
           </div>
 
-          <div className="w-48">
+          <div className="w-[8rem]">
             <Select
-              className="max-w-xs"
               variant="bordered"
               label="Tampilan tugas"
               selectedKeys={new Set([viewMode])}
@@ -1191,13 +1190,11 @@ export default function WorkspaceBoardPage() {
               <SelectItem key="table" startContent={<FiTable />}>Tabel</SelectItem>
               <SelectItem key="report" startContent={<FiFile />}>Laporan</SelectItem>
             </Select>
-            
           </div>
 
           {viewMode === 'list' && (
-            <div className="mt-2">
+            <div className="m-0 p-0">
               <Input
-                size="sm"
                 placeholder="Cari Task"
                 startContent={<FiSearch />}
                 variant="bordered"
@@ -1208,7 +1205,8 @@ export default function WorkspaceBoardPage() {
           )}
 
         </div>
-        <div className="hidden sm:flex items-center gap-2">
+
+        <div className="items-center gap-2">
           {workspaceRole === "ADMIN" && (
             <div className="flex gap-2 items-center">
               <Button color="primary" variant="bordered" endContent={<FiPlus />} onPress={() => { setAddMembersOpen(true); loadAvailableUsers(); }}>Atur Member</Button>

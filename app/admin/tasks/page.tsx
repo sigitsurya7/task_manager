@@ -5,7 +5,7 @@ import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from 
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { useRouter } from "next/navigation";
-import { FiFolder } from "react-icons/fi";
+import { FiFolder, FiSearch } from "react-icons/fi";
 import { Input } from "@heroui/input";
 import { Pagination } from "@heroui/pagination";
 
@@ -48,16 +48,25 @@ export default function MyTasksPage() {
     <div className="max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-4 gap-3">
         <h1 className="text-2xl font-semibold">Tugas Saya</h1>
-        <div className="flex items-center gap-2">
-          <Input placeholder="Cari tugas..." size="sm" value={q} onValueChange={setQ} className="w-64" />
-          <select className="border rounded-md px-2 py-1 text-sm" value={pageSize} onChange={(e)=>{ setPageSize(parseInt(e.target.value,10)); setPage(1); }}>
-            <option value={10}>10</option>
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-          </select>
-        </div>
       </div>
-      <Table aria-label="Tugas saya">
+      <Table
+        aria-label="Tugas saya"
+        topContent={(
+          <div className="flex justify-between">
+            <Input startContent={<FiSearch />} placeholder="Cari tugas..." size="sm" value={q} onValueChange={setQ} className="w-64" />
+            <select className="border rounded-md px-2 py-1 text-sm" value={pageSize} onChange={(e)=>{ setPageSize(parseInt(e.target.value,10)); setPage(1); }}>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+          </div>
+        )}
+        bottomContent={(
+          <div className="flex justify-end mt-4">
+            <Pagination page={page} total={totalPages} onChange={setPage} showControls size="sm" />
+          </div>
+        )}
+      >
         <TableHeader>
           <TableColumn>Tugas</TableColumn>
           <TableColumn>Workspace</TableColumn>
@@ -81,9 +90,6 @@ export default function MyTasksPage() {
           ))}
         </TableBody>
       </Table>
-      <div className="flex justify-end mt-4">
-        <Pagination page={page} total={totalPages} onChange={setPage} showControls size="sm" />
-      </div>
     </div>
   );
 }
