@@ -56,6 +56,7 @@ export function DatesModal({
                 </label>
                 <div className="grid grid-cols-2 gap-2 mt-1">
                   <Input
+                    aria-label="Tanggal mulai"
                     type="date"
                     value={startDate.split("T")[0] || ""}
                     onChange={(e) =>
@@ -66,6 +67,7 @@ export function DatesModal({
                     disabled={!startEnabled}
                   />
                   <Input
+                    aria-label="Waktu mulai"
                     type="time"
                     value={startDate.split("T")[1]?.slice(0, 5) || ""}
                     onChange={(e) =>
@@ -82,11 +84,13 @@ export function DatesModal({
                 </label>
                 <div className="grid grid-cols-2 gap-2 mt-1">
                   <Input
+                    aria-label="Tanggal jatuh tempo"
                     type="date"
                     value={due.split("T")[0] || ""}
                     onChange={(e) => setDue(e.target.value + (due.includes("T") ? "T" + due.split("T")[1] : "T12:00"))}
                   />
                   <Input
+                    aria-label="Waktu jatuh tempo"
                     type="time"
                     value={due.split("T")[1]?.slice(0, 5) || ""}
                     onChange={(e) =>

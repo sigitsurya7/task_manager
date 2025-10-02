@@ -102,7 +102,7 @@ export default function UsersPage() {
         <CardHeader className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">User Management</h1>
           <div className="flex items-center gap-3">
-            <Input size="sm" placeholder="Search users..." value={q} onValueChange={(v)=>{ setQ(v); setPage(1); }} className="w-56" />
+            <Input aria-label="Cari pengguna" size="sm" placeholder="Search users..." value={q} onValueChange={(v)=>{ setQ(v); setPage(1); }} className="w-56" />
             <Button color="primary" startContent={<FiPlus />} onPress={openAdd}>Add</Button>
           </div>
         </CardHeader>

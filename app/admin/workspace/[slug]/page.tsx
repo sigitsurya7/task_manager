@@ -134,6 +134,7 @@ function DescriptionSection({ desc, setDesc, isViewer, onSave, saving }: { desc:
     <div className="mt-6">
       <p className="text-small text-default-500">Deskripsi</p>
       <Textarea
+        aria-label="Deskripsi"
         className="mt-2"
         minRows={4}
         variant="bordered"
@@ -582,12 +583,25 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
             })()}
             {isEditingTitle ? (
               <div className="flex items-center gap-2">
-                <Input size="sm" variant="bordered" value={titleEdit} onValueChange={setTitleEdit} onKeyDown={(e)=>{ if(e.key==='Enter') saveTitle(); if(e.key==='Escape'){ setIsEditingTitle(false); setTitleEdit(task.title);} }} />
+                <Input aria-label="Edit judul task" size="sm" variant="bordered" value={titleEdit} onValueChange={setTitleEdit} onKeyDown={(e)=>{ if(e.key==='Enter') saveTitle(); if(e.key==='Escape'){ setIsEditingTitle(false); setTitleEdit(task.title);} }} />
                 <Button size="sm" color="primary" onPress={saveTitle} isDisabled={!titleEdit.trim()} isLoading={savingTitle}>Save</Button>
                 <Button size="sm" variant="light" onPress={()=>{ setIsEditingTitle(false); setTitleEdit(task.title); }}>Cancel</Button>
               </div>
             ) : (
-              <h2 className={`text-2xl font-semibold ${!isViewer ? 'cursor-text' : ''}`} onClick={()=>{ if (!isViewer) setIsEditingTitle(true); }}>{task.title}</h2>
+              <h2 className="text-2xl font-semibold">
+                {isViewer ? (
+                  <span>{task.title}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingTitle(true)}
+                    aria-label="Edit judul task"
+                    className="text-left w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm"
+                  >
+                    {task.title}
+                  </button>
+                )}
+              </h2>
             )}
 
             {!isViewer && (
@@ -672,6 +686,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                   {!isViewer && (
                     <div className="mt-2">
                       <Input
+                        aria-label="Tambah item checklist"
                         variant="bordered"
                         placeholder="Add an item"
                         value={newItem[g.id] || ""}
@@ -692,6 +707,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                         }} isDisabled={isViewer} />
                         <div className="flex-1">
                           <Input
+                            aria-label="Judul item checklist"
                             variant="bordered"
                             size="sm"
                             value={c.title}
@@ -796,11 +812,11 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
               </div>
               <div>
                 <p className="text-tiny text-default-500 mb-1">Cari atau tempel tautan</p>
-                <Input placeholder="Cari tautan terbaru atau tempel tautan baru" value={pendingLink} onValueChange={setPendingLink} />
+                <Input aria-label="Tautan" placeholder="Cari tautan terbaru atau tempel tautan baru" value={pendingLink} onValueChange={setPendingLink} />
               </div>
               <div>
                 <p className="text-tiny text-default-500 mb-1">Teks tampilan (opsional)</p>
-                <Input placeholder="Teks untuk ditampilkan" value={pendingDisplay} onValueChange={setPendingDisplay} />
+                <Input aria-label="Teks tampilan" placeholder="Teks untuk ditampilkan" value={pendingDisplay} onValueChange={setPendingDisplay} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="light" onPress={()=>{ setAttachModal(false); setPendingFile(null); setPendingLink(""); setPendingDisplay(""); }}>Batal</Button>
@@ -824,7 +840,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
               ) : (preview.att.type === 'application/pdf' || (preview.att.url||'').toLowerCase().endsWith('.pdf')) ? (
                 <iframe src={preview.att.url} className="w-full h-[75vh]" title="Attachment preview" />
               ) : (
-                <p className="text-sm text-default-500">Preview tidak tersedia untuk tipe ini. <a className="text-primary" href={preview.att.url} target="_blank" rel="noreferrer">Buka di tab baru</a>.</p>
+                <p className="text-sm text-default-500">Preview tidak tersedia untuk tipe ini. <a className="text-primary" href={preview.att.url} target="_blank" rel="noopener noreferrer">Buka di tab baru</a>.</p>
               )
             ) : null}
           </div>
@@ -932,6 +948,7 @@ function Column({ data, onAdd, onOpen }: { data: ColumnData; onAdd: (colId: stri
         {adding ? (
           <div ref={formRef} className="flex items-center gap-2">
               <Input
+                aria-label="Judul tugas"
                 autoFocus
                 size="sm"
                 variant="bordered"
@@ -1195,6 +1212,7 @@ export default function WorkspaceBoardPage() {
           {viewMode === 'list' && (
             <div className="m-0 p-0">
               <Input
+                aria-label="Cari task"
                 placeholder="Cari Task"
                 startContent={<FiSearch />}
                 variant="bordered"
@@ -1265,7 +1283,7 @@ export default function WorkspaceBoardPage() {
         </div>
       ) : viewMode === 'table' ? (
         <div className="flex flex-col gap-2 min-h-0 overflow-auto">
-          <Input size="sm" className="w-56" variant="bordered" placeholder="Cari tugas tabel..." value={tableQuery} onValueChange={setTableQuery} />
+          <Input aria-label="Cari tugas tabel" size="sm" className="w-56" variant="bordered" placeholder="Cari tugas tabel..." value={tableQuery} onValueChange={setTableQuery} />
           <Table aria-label="Tugas di workspace" removeWrapper isStriped>
             <TableHeader>
               <TableColumn>Tugas</TableColumn>
@@ -1469,7 +1487,7 @@ export default function WorkspaceBoardPage() {
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
-                  <Input placeholder="Cari user (username/nama)" value={userQuery} onValueChange={(v)=>{ setUserQuery(v); }} className="max-w-sm" />
+                  <Input aria-label="Cari user" placeholder="Cari user (username/nama)" value={userQuery} onValueChange={(v)=>{ setUserQuery(v); }} className="max-w-sm" />
                   <Button variant="flat" onPress={loadAvailableUsers}>Cari</Button>
                 </div>
                 <div className="max-h-80 overflow-auto no-scrollbar space-y-2">

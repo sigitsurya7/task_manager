@@ -97,11 +97,11 @@ export function MonthCalendar() {
     <>
       <Card>
         <CardHeader className="flex items-center justify-between">
-          <Button size="sm" variant="light" onPress={() => setCursor((c) => addMonths(c, -1))}>
+          <Button size="sm" variant="light" aria-label="Bulan sebelumnya" onPress={() => setCursor((c) => addMonths(c, -1))}>
             <FiArrowLeft className="text-xl" />
           </Button>
           <div className="font-medium">{monthLabel}</div>
-          <Button size="sm" variant="light" onPress={() => setCursor((c) => addMonths(c, 1))}>
+          <Button size="sm" variant="light" aria-label="Bulan berikutnya" onPress={() => setCursor((c) => addMonths(c, 1))}>
             <FiArrowRight className="text-xl" />
           </Button>
         </CardHeader>

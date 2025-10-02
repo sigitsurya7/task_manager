@@ -38,6 +38,8 @@ export default function InstallButton() {
       startContent={<FiDownload />}
       className="fixed bottom-6 left-6 z-50 shadow-lg rounded-full"
       variant="flat"
+      aria-label="Instal aplikasi"
+      title="Instal aplikasi"
       onPress={async () => {
         try { await deferred.prompt(); } catch {}
         setDeferred(null);
@@ -48,4 +50,3 @@ export default function InstallButton() {
     </Button>
   );
 }
-

@@ -25,7 +25,7 @@ export function AdminMobileMenu() {
             <div className="relative h-full overflow-y-auto">
               <button
                 aria-label="Tutup menu"
-                className="absolute right-2 top-2 z-10 rounded-full p-2 text-default-500 hover:bg-default-100"
+                className="absolute right-2 top-2 z-10 rounded-full p-2 text-default-500 hover:bg-default-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 onClick={() => setOpen(false)}
               >
                 <FiX />

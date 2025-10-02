@@ -201,6 +201,7 @@ export default function AdminSidebar({ variant = "default" }: { variant?: "defau
 
   return (
     <aside
+      aria-label="Sidebar navigasi"
       className={clsx(
         "h-full shrink-0 flex flex-col",
         variant === "mobile"

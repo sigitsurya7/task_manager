@@ -69,7 +69,7 @@ export function LabelsModal({
         {() => (
           <div className="p-6">
             <ModalHeader className="p-0 mb-3">Label</ModalHeader>
-            <Input placeholder="Cari label..." value={labelQuery} onValueChange={setLabelQuery} className="mb-3" />
+            <Input aria-label="Cari label" placeholder="Cari label..." value={labelQuery} onValueChange={setLabelQuery} className="mb-3" />
             <div className="space-y-2 mb-4">
               {allLabels
                 .filter((l) => l.name.toLowerCase().includes(labelQuery.toLowerCase()))

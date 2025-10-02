@@ -73,7 +73,7 @@ export function MembersModal({
         {() => (
           <div className="p-6">
             <ModalHeader className="p-0 mb-3">Anggota</ModalHeader>
-            <Input placeholder="Cari anggota" value={memberQuery} onValueChange={setMemberQuery} className="mb-3" />
+            <Input aria-label="Cari anggota" placeholder="Cari anggota" value={memberQuery} onValueChange={setMemberQuery} className="mb-3" />
             <div className="overflow-y-auto overflow-x-hidden pb-20 max-h-80 no-scrollbar space-y-2">
               {members
                 .filter((u) => u.role !== "VIEWER")
@@ -89,6 +89,7 @@ export function MembersModal({
                       <span>{u.name ? `${u.name}` : u.username}</span>
                     </div>
                     <Checkbox
+                      aria-label={`Pilih ${u.name ? u.name : u.username}`}
                       isSelected={selectedMemberIds.has(u.id)}
                       onValueChange={(val) => {
                         setSelectedMemberIds((prev) => {

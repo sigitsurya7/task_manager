@@ -53,8 +53,8 @@ export default function MyTasksPage() {
         aria-label="Tugas saya"
         topContent={(
           <div className="flex justify-between">
-            <Input startContent={<FiSearch />} placeholder="Cari tugas..." size="sm" value={q} onValueChange={setQ} className="w-64" />
-            <select className="border rounded-md px-2 py-1 text-sm" value={pageSize} onChange={(e)=>{ setPageSize(parseInt(e.target.value,10)); setPage(1); }}>
+            <Input aria-label="Cari tugas" startContent={<FiSearch />} placeholder="Cari tugas..." size="sm" value={q} onValueChange={setQ} className="w-64" />
+            <select aria-label="Jumlah per halaman" className="border rounded-md px-2 py-1 text-sm" value={pageSize} onChange={(e)=>{ setPageSize(parseInt(e.target.value,10)); setPage(1); }}>
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={50}>50</option>

@@ -57,11 +57,11 @@ export function AttachmentsModal({
               </div>
               <div>
                 <p className="text-tiny text-default-500 mb-1">Cari atau tempel tautan</p>
-                <Input placeholder="Cari tautan terbaru atau tempel tautan baru" value={pendingLink} onValueChange={setPendingLink} />
+                <Input aria-label="Tautan" placeholder="Cari tautan terbaru atau tempel tautan baru" value={pendingLink} onValueChange={setPendingLink} />
               </div>
               <div>
                 <p className="text-tiny text-default-500 mb-1">Teks tampilan (opsional)</p>
-                <Input placeholder="Teks untuk ditampilkan" value={pendingDisplay} onValueChange={setPendingDisplay} />
+                <Input aria-label="Teks tampilan" placeholder="Teks untuk ditampilkan" value={pendingDisplay} onValueChange={setPendingDisplay} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="light" onPress={close}>Batal</Button>

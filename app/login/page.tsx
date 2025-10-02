@@ -62,7 +62,9 @@ export default function LoginPage() {
           </CardHeader>
           <CardBody className="gap-4">
             <Input
+              label="Email atau Username"
               placeholder="Email atau Username"
+              aria-label="Email atau Username"
               variant="bordered"
               type="text"
               value={email}
@@ -73,7 +75,9 @@ export default function LoginPage() {
             />
 
             <Input
+              label="Kata sandi"
               placeholder="Kata sandi"
+              aria-label="Kata sandi"
               variant="bordered"
               type={showPassword ? "text" : "password"}
               value={password}
@@ -85,7 +89,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="text-default-400 hover:text-default-600 outline-none"
+                  className="text-default-400 hover:text-default-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm"
                   aria-label={showPassword ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
                 >
                   {showPassword ? (

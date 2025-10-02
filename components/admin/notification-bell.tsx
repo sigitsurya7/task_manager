@@ -88,9 +88,16 @@ export default function NotificationBell() {
   return (
     <Popover isOpen={open} onOpenChange={setOpen} placement="top-end">
       <PopoverTrigger>
-        <div className="fixed bottom-6 right-6 z-50" onClick={() => setOpen((v) => !v)}>
-          <Badge color="danger" aria-label="tandai baca" content={unread > 99 ? '99+' : unread} shape="circle">
-            <Button isIconOnly radius="full" onPress={() => setOpen((v) => !v)} variant="light" aria-label="Notification" className="shadow-lg rounded-full">
+        <div className="fixed bottom-6 right-6 z-50" aria-label="container">
+          <Badge color="danger" aria-label="Jumlah notifikasi belum dibaca" content={unread > 99 ? '99+' : unread} shape="circle">
+            <Button
+              isIconOnly
+              radius="full"
+              onPress={() => setOpen((v) => !v)}
+              variant="light"
+              aria-label="Buka pemberitahuan"
+              className="shadow-lg rounded-full"
+            >
               <FiBell size={22} />
             </Button>
           </Badge>

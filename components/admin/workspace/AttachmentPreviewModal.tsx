@@ -28,7 +28,7 @@ export function AttachmentPreviewModal({
               ) : (
                 <p className="text-sm text-default-500">
                   Preview tidak tersedia untuk tipe ini.{" "}
-                  <a className="text-primary" href={att.url} target="_blank" rel="noreferrer">
+                  <a className="text-primary" href={att.url} target="_blank" rel="noopener noreferrer">
                     Buka di tab baru
                   </a>
                   .

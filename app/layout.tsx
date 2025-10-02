@@ -42,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html suppressHydrationWarning lang="en">
+    <html suppressHydrationWarning lang="id">
       <head />
       <body
         className={clsx(
@@ -52,9 +52,16 @@ export default function RootLayout({
       >
         <Providers themeProps={{ attribute: "class", defaultTheme: "dark" }}>
           <div className="relative flex flex-col min-h-dvh">
+            {/* Skip link for keyboard users */}
+            <a
+              href="#main-content"
+              className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-content2 focus:px-3 focus:py-2"
+            >
+              Lewati ke konten utama
+            </a>
             <Toaster position="top-center" />
             <RegisterSW />
-            <main className="px-4 py-4 flex-1 min-h-0">
+            <main id="main-content" role="main" className="px-4 py-4 flex-1 min-h-0">
               {children}
             </main>
             {/* <footer className="w-full flex gap-2 items-center justify-center py-3">
