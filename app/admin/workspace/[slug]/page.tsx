@@ -134,7 +134,6 @@ function DescriptionSection({ desc, setDesc, isViewer, onSave, saving }: { desc:
     <div className="mt-6">
       <p className="text-small text-default-500">Deskripsi</p>
       <Textarea
-        aria-label="Deskripsi"
         className="mt-2"
         minRows={4}
         variant="bordered"
@@ -583,25 +582,12 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
             })()}
             {isEditingTitle ? (
               <div className="flex items-center gap-2">
-                <Input aria-label="Edit judul task" size="sm" variant="bordered" value={titleEdit} onValueChange={setTitleEdit} onKeyDown={(e)=>{ if(e.key==='Enter') saveTitle(); if(e.key==='Escape'){ setIsEditingTitle(false); setTitleEdit(task.title);} }} />
+                <Input size="sm" variant="bordered" value={titleEdit} onValueChange={setTitleEdit} onKeyDown={(e)=>{ if(e.key==='Enter') saveTitle(); if(e.key==='Escape'){ setIsEditingTitle(false); setTitleEdit(task.title);} }} />
                 <Button size="sm" color="primary" onPress={saveTitle} isDisabled={!titleEdit.trim()} isLoading={savingTitle}>Save</Button>
                 <Button size="sm" variant="light" onPress={()=>{ setIsEditingTitle(false); setTitleEdit(task.title); }}>Cancel</Button>
               </div>
             ) : (
-              <h2 className="text-2xl font-semibold">
-                {isViewer ? (
-                  <span>{task.title}</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingTitle(true)}
-                    aria-label="Edit judul task"
-                    className="text-left w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm"
-                  >
-                    {task.title}
-                  </button>
-                )}
-              </h2>
+              <h2 className={`text-2xl font-semibold ${!isViewer ? 'cursor-text' : ''}`} onClick={()=>{ if (!isViewer) setIsEditingTitle(true); }}>{task.title}</h2>
             )}
 
             {!isViewer && (
@@ -686,7 +672,6 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                   {!isViewer && (
                     <div className="mt-2">
                       <Input
-                        aria-label="Tambah item checklist"
                         variant="bordered"
                         placeholder="Add an item"
                         value={newItem[g.id] || ""}
@@ -707,7 +692,6 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
                         }} isDisabled={isViewer} />
                         <div className="flex-1">
                           <Input
-                            aria-label="Judul item checklist"
                             variant="bordered"
                             size="sm"
                             value={c.title}
@@ -812,11 +796,11 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
               </div>
               <div>
                 <p className="text-tiny text-default-500 mb-1">Cari atau tempel tautan</p>
-                <Input aria-label="Tautan" placeholder="Cari tautan terbaru atau tempel tautan baru" value={pendingLink} onValueChange={setPendingLink} />
+                <Input placeholder="Cari tautan terbaru atau tempel tautan baru" value={pendingLink} onValueChange={setPendingLink} />
               </div>
               <div>
                 <p className="text-tiny text-default-500 mb-1">Teks tampilan (opsional)</p>
-                <Input aria-label="Teks tampilan" placeholder="Teks untuk ditampilkan" value={pendingDisplay} onValueChange={setPendingDisplay} />
+                <Input placeholder="Teks untuk ditampilkan" value={pendingDisplay} onValueChange={setPendingDisplay} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="light" onPress={()=>{ setAttachModal(false); setPendingFile(null); setPendingLink(""); setPendingDisplay(""); }}>Batal</Button>
@@ -840,7 +824,7 @@ function TaskDetail({ task, columnTitle, columnAccent, slug, role, onClose, onCh
               ) : (preview.att.type === 'application/pdf' || (preview.att.url||'').toLowerCase().endsWith('.pdf')) ? (
                 <iframe src={preview.att.url} className="w-full h-[75vh]" title="Attachment preview" />
               ) : (
-                <p className="text-sm text-default-500">Preview tidak tersedia untuk tipe ini. <a className="text-primary" href={preview.att.url} target="_blank" rel="noopener noreferrer">Buka di tab baru</a>.</p>
+                <p className="text-sm text-default-500">Preview tidak tersedia untuk tipe ini. <a className="text-primary" href={preview.att.url} target="_blank" rel="noreferrer">Buka di tab baru</a>.</p>
               )
             ) : null}
           </div>
@@ -948,7 +932,6 @@ function Column({ data, onAdd, onOpen }: { data: ColumnData; onAdd: (colId: stri
         {adding ? (
           <div ref={formRef} className="flex items-center gap-2">
               <Input
-                aria-label="Judul tugas"
                 autoFocus
                 size="sm"
                 variant="bordered"
@@ -1212,7 +1195,6 @@ export default function WorkspaceBoardPage() {
           {viewMode === 'list' && (
             <div className="m-0 p-0">
               <Input
-                aria-label="Cari task"
                 placeholder="Cari Task"
                 startContent={<FiSearch />}
                 variant="bordered"
@@ -1224,7 +1206,58 @@ export default function WorkspaceBoardPage() {
 
         </div>
 
-        <div className="items-center gap-2">
+        <div className="flex items-center gap-2">
+          <Button
+            color="success"
+            variant="bordered"
+            startContent={<RiFileExcel2Fill />}
+            onPress={async () => {
+              try {
+                const XLSX = await import('xlsx');
+                const title = `Laporan ${currentWorkspace?.name ?? slug}`;
+                const header = ['Tugas', 'Status', 'Anggota', 'Tanggal Mulai', 'Deadline', 'Label'];
+
+                const fmt = (v?: string | null) => v ? (new Date(v).toLocaleString()) : '-';
+                const rowsAoa = filteredSortedRows.map(({ task, column }) => {
+                  const anyTask = task as any;
+                  const assignees = ((anyTask.assignees ?? []) as any[]).map(a => (a?.name || a?.username)).join(', ');
+                  const labels = ((anyTask.tags ?? []) as any[]).map(l => l?.name).join(', ');
+                  const start: string | null | undefined = anyTask.startDate;
+                  const due: string | null | undefined = anyTask.dueDate;
+                  return [
+                    anyTask.title,
+                    column.title,
+                    assignees,
+                    start ? fmt(start) : '-',
+                    due ? fmt(due) : '-',
+                    labels,
+                  ];
+                });
+
+                const data = [[title], [], header, ...rowsAoa];
+                const ws = XLSX.utils.aoa_to_sheet(data);
+                // Merge title row across all columns (simple)
+                try { (ws as any)['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: header.length - 1 } }]; } catch {}
+                // Set basic column widths
+                try { (ws as any)['!cols'] = [
+                  { wch: 40 }, // Tugas
+                  { wch: 20 }, // Status
+                  { wch: 28 }, // Anggota
+                  { wch: 22 }, // Tanggal Mulai
+                  { wch: 22 }, // Deadline
+                  { wch: 28 }, // Label
+                ]; } catch {}
+
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Laporan');
+                XLSX.writeFile(wb, `${title}.xlsx`);
+              } catch (e) {
+                toast.error('Gagal mengekspor Excel');
+              }
+            }}
+          >
+            Export
+          </Button>
           {workspaceRole === "ADMIN" && (
             <div className="flex gap-2 items-center">
               <Button color="primary" variant="bordered" endContent={<FiPlus />} onPress={() => { setAddMembersOpen(true); loadAvailableUsers(); }}>Atur Member</Button>
@@ -1283,7 +1316,7 @@ export default function WorkspaceBoardPage() {
         </div>
       ) : viewMode === 'table' ? (
         <div className="flex flex-col gap-2 min-h-0 overflow-auto">
-          <Input aria-label="Cari tugas tabel" size="sm" className="w-56" variant="bordered" placeholder="Cari tugas tabel..." value={tableQuery} onValueChange={setTableQuery} />
+          <Input size="sm" className="w-56" variant="bordered" placeholder="Cari tugas tabel..." value={tableQuery} onValueChange={setTableQuery} />
           <Table aria-label="Tugas di workspace" removeWrapper isStriped>
             <TableHeader>
               <TableColumn>Tugas</TableColumn>
@@ -1487,7 +1520,7 @@ export default function WorkspaceBoardPage() {
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
-                  <Input aria-label="Cari user" placeholder="Cari user (username/nama)" value={userQuery} onValueChange={(v)=>{ setUserQuery(v); }} className="max-w-sm" />
+                  <Input placeholder="Cari user (username/nama)" value={userQuery} onValueChange={(v)=>{ setUserQuery(v); }} className="max-w-sm" />
                   <Button variant="flat" onPress={loadAvailableUsers}>Cari</Button>
                 </div>
                 <div className="max-h-80 overflow-auto no-scrollbar space-y-2">
